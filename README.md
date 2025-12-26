@@ -68,7 +68,7 @@ Built with ❤️ using Flutter, it is optimized to run smoothly in the backgrou
 You can download the latest APK from the [Releases Page](https://github.com/Saqib791/TimeManager/releases).
 
 1. Go to **Releases**.
-2. Download `app-release.apk`.
+2. Download `TimemManager.apk`.
 3. Install and enjoy!
 
 ---
@@ -81,7 +81,14 @@ If you want to build this app from source:
    ```bash
    git clone [https://github.com/Saqib791/TimeManager.git](https://github.com/Saqib791/TimeManager.git)
 2. **Navigate to the project folder:
-```bash
+
+cd TimeManager
+3. **Install dependencies:
+
+flutter pub get
+3. **Run the app:
+
+flutter run
 cd TimeManager
 
 3. **Install dependencies:
