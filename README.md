@@ -115,11 +115,16 @@ Open a Pull Request
 ❤️ Support
 If you find this app helpful, you can support the development!
 
-<a href="https://buymeacoffee.com/saqib791"> [![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-ffdd00?&logo=buy-me-a-coffee&logoColor=black)](#)
+<a href="https://buymeacoffee.com/saqib791">
+  <img src="https://img.shields.io/badge/Buy%20Me%20a%20Coffee-ffdd00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black" alt="Buy Me A Coffee" />
+</a>
 
 UPI ID: saqibqamar7866@okicici
 
-📄 License
-This project is licensed under the MIT License - see the LICENSE file for details.
+## 📄 License
+
+This project is licensed under the **GNU General Public License v3.0** - see the [LICENSE](LICENSE.md) file for details.
+
+Copyright (c) 2025 Mohd Saqib Qamar
 
 <div align="center"> Made with ❤️ by <b>Mohd Saqib Qamar</b> </div>
