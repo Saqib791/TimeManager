@@ -121,7 +121,10 @@ If you find this app helpful, you can support the development!
 
 UPI ID: saqibqamar7866@okicici
 
-📄 License
-This project is licensed under the MIT License - see the LICENSE file for details.
+## 📄 License
+
+This project is licensed under the **GNU General Public License v3.0** - see the [LICENSE](LICENSE) file for details.
+
+Copyright (c) 2025 Mohd Saqib Qamar
 
 <div align="center"> Made with ❤️ by <b>Mohd Saqib Qamar</b> </div>
