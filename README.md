@@ -80,3 +80,41 @@ If you want to build this app from source:
 1. **Clone the repository:**
    ```bash
    git clone [https://github.com/Saqib791/TimeManager.git](https://github.com/Saqib791/TimeManager.git)
+
+   Navigate to the project folder:
+
+
+cd TimeManager
+Install dependencies:
+
+
+
+flutter pub get
+Run the app:
+
+
+flutter run
+🤝 Contributing
+Contributions are welcome! If you have an idea or found a bug, feel free to open an issue or submit a pull request.
+
+Fork the Project
+
+Create your Feature Branch (git checkout -b feature/NewFeature)
+
+Commit your Changes (git commit -m 'Add some NewFeature')
+
+Push to the Branch (git push origin feature/NewFeature)
+
+Open a Pull Request
+
+❤️ Support
+If you find this app helpful, you can support the development!
+
+<a href="https://buymeacoffee.com/saqib791"> <img src="https://www.google.com/search?q=https://img.shields.io/badge/Buy%2520Me%2520a%2520Coffee-ffdd00%3Fstyle%3Dfor-the-badge%26logo%3Dbuy-me-a-coffee%26logoColor%3Dblack" /> </a>
+
+UPI ID: saqibqamar7866@okicici
+
+📄 License
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+<div align="center"> Made with ❤️ by <b>Mohd Saqib Qamar</b> </div>
