@@ -1125,6 +1125,8 @@ class _UniversalTimerScreenState extends State<UniversalTimerScreen> with Automa
     }
     return Scaffold(backgroundColor: Colors.black,
         // Naya Code:
+        // UniversalTimerScreen ke andar 'build' method mein
+
         appBar: isLandscape
             ? null
             : AppBar(
@@ -1136,23 +1138,11 @@ class _UniversalTimerScreenState extends State<UniversalTimerScreen> with Automa
           centerTitle: true,
           backgroundColor: Colors.black,
           actions: [
-            // 1. Timer wali settings (Sirf Pomodoro/Exam mode mein dikhegi)
+            // 👇 SIRF YE EK BUTTON RAHEGA (Time Change karne ke liye)
             if (timerMode != 0)
               IconButton(
-                  onPressed: _openSettings,
-                  icon: const Icon(Icons.tune, color: Colors.grey)), // Icon badal diya taaki confuse na ho
-
-            // 2. MAIN APP SETTINGS (Jo aap chahte the - Donate wala page)
-            IconButton(
-              icon: const Icon(Icons.settings), // Gear Icon
-              color: mainColor.value,
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => const SettingsScreen()),
-                );
-              },
-            ),
+                  onPressed: _openSettings, // Ye function Time Picker kholega
+                  icon: const Icon(Icons.settings, color: Colors.grey)), // Wapas Gear Icon laga diya
           ],
         ),
         body: isLandscape
