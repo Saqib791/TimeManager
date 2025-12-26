@@ -123,7 +123,7 @@ UPI ID: saqibqamar7866@okicici
 
 ## 📄 License
 
-This project is licensed under the **GNU General Public License v3.0** - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the **GNU General Public License v3.0** - see the [LICENSE](LICENSE.md) file for details.
 
 Copyright (c) 2025 Mohd Saqib Qamar
 
