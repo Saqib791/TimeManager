@@ -5,7 +5,7 @@ plugins {
 }
 
 android {
-    namespace = "com.example.time_app"
+    namespace = "com.saqib.timemanager"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -21,7 +21,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.time_app"
+        applicationId = "com.saqib.timemanager"
         minSdk = flutter.minSdkVersion // Notification ke liye 21
         targetSdk = flutter.targetSdkVersion
         versionCode = 1

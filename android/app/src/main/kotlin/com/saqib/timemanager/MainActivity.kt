@@ -1,4 +1,4 @@
-package com.example.time_app
+package com.saqib.timemanager
 
 import android.os.Build
 import android.os.Bundle

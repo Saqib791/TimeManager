@@ -1138,11 +1138,11 @@ class _UniversalTimerScreenState extends State<UniversalTimerScreen> with Automa
           centerTitle: true,
           backgroundColor: Colors.black,
           actions: [
-            // 👇 SIRF YE EK BUTTON RAHEGA (Time Change karne ke liye)
+
             if (timerMode != 0)
               IconButton(
-                  onPressed: _openSettings, // Ye function Time Picker kholega
-                  icon: const Icon(Icons.settings, color: Colors.grey)), // Wapas Gear Icon laga diya
+                  onPressed: _openSettings,
+                  icon: const Icon(Icons.settings, color: Colors.grey)),
           ],
         ),
         body: isLandscape
