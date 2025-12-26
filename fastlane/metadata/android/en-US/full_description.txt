@@ -1,0 +1,7 @@
+Time Manager is a completely offline, open-source productivity tool built with Flutter. It helps users manage focus time without distractions and without tracking.
+
+Key Features:
+* 3 Timer Modes: StudyWatch (Stopwatch), Pomodoro (Focus/Break), and Exam Mode (Strict Countdown).
+* Sticky Notification Logic: Prevents accidental swipes on devices with aggressive battery optimization (like MIUI/HyperOS) by keeping the notification persistent while the timer runs. Includes a dedicated "EXIT" action to stop the background service cleanly.
+* Analytics: Detailed graphs for weekly, monthly, and yearly study trends.
+* Privacy: No internet permission required for core functionality, no Google Mobile Services (GMS), and no Firebase. Data is stored locally using SharedPreferences.
