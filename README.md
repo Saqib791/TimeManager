@@ -115,7 +115,7 @@ Open a Pull Request
 ❤️ Support
 If you find this app helpful, you can support the development!
 
-<a href="https://buymeacoffee.com/saqib791"> <img src=[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-ffdd00?&logo=buy-me-a-coffee&logoColor=black)](#)
+<a href="https://buymeacoffee.com/saqib791"> [![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-ffdd00?&logo=buy-me-a-coffee&logoColor=black)](#)
 
 UPI ID: saqibqamar7866@okicici
 
