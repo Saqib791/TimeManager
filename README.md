@@ -99,7 +99,7 @@ flutter pub get
 
 flutter run
 
-##🤝 Contributing
+## 🤝 Contributing
 Contributions are welcome! If you have an idea or found a bug, feel free to open an issue or submit a pull request.
 
 Fork the Project
