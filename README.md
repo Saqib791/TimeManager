@@ -85,12 +85,12 @@ If you want to build this app from source:
 ```javascript
 cd TimeManager
 ```
-3. **Install dependencies:
+3. **Install dependencies:**
 
 ```javascript
 flutter pub get
 ```
-3. **Run the app:
+3. **Run the app:**
 
 ```javascript
 flutter run
