@@ -130,8 +130,6 @@ If you find this app helpful, you can support the development!
 </a>
 
 
-<br>
-<b>UPI ID:</b> saqibqamar7866@okicici
 
 ## 📄 License
 
