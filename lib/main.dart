@@ -803,7 +803,7 @@ class _UniversalTimerScreenState extends State<UniversalTimerScreen> with Automa
           }
         } 
         
-        // 👇 NEW: Hourly Alert Check (Sirf Stopwatch Mode me)
+        // 👇 NEW: Hourly Alert Check 
         else if (timerMode == 0 && isTimerRunning) {
            int totalSeconds = _getCurrentSeconds();
            int currentHour = totalSeconds ~/ 3600; // 3600 sec = 1 Hour
