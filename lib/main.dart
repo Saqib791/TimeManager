@@ -1781,25 +1781,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
   static const platform = MethodChannel('com.example.time_app/settings');
 
   // --- DONATION LOGIC START ---
-  Future<void> _payWithUPI(String amount) async {
-    const String upiId = "saqibqamar7866@okicici"; // Apni ID yahan dalein
+ Future<void> _payWithUPI(String amount) async {
+    const String upiId = "saqibqamar7866@okicici"; 
     const String name = "Time Manager Dev";
-    const String note = "Support Time Manager";
+    // const String note = "Donation"; // Note bhi hata diya safety ke liye
 
-    // 👇 FIX: Har baar naya Transaction ID generate karo
-    String transactionRefId = DateTime.now().millisecondsSinceEpoch.toString();
-
-    // 👇 FIX: Amount ko '.00' format me bhejo (Strict apps ke liye)
+    // Format amount to 2 decimal places (Ex: 10.00)
     String formattedAmount = "$amount.00";
 
-    // Yahan 'amount' dynamic ho gaya hai
+    // 👇 CHANGE: 'tr' aur 'tn' hata diya. Simple P2P transfer banaya.
     final Uri upiUrl = Uri.parse(
-        "upi://pay?pa=$upiId&pn=$name&tn=$note&am=$formattedAmount&cu=INR&tr=$transactionRefId"
+        "upi://pay?pa=$upiId&pn=$name&am=$formattedAmount&cu=INR&mode=00"
     );
+    
+    // mode=00 ka matlab hota hai default/payer initiated payment.
+
     try {
-      // 👇 FIX: 'launchUrl' ko direct call karo with explicit mode
       if (!await launchUrl(upiUrl, mode: LaunchMode.externalApplication)) {
-        // Agar koi app nahi khuli
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
              const SnackBar(content: Text("No UPI App found!"), backgroundColor: Colors.red),

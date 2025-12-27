@@ -12,13 +12,7 @@
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"/>
 
     
-    <queries>
-    <intent>
-        <action android:name="android.intent.action.VIEW" />
-        <data android:scheme="upi" />
-    </intent>
-    <package android:name="com.google.android.apps.nbu.paisa.user" /> <package android:name="com.phonepe.app" /> <package android:name="net.one97.paytm" /> <package android:name="in.org.npci.upiapp" /> </queries>
-
+  
     <application
         android:label="Time Manager"
         android:name="android.app.Application"
