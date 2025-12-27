@@ -1786,12 +1786,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
     const String name = "Time Manager Dev";
     const String note = "Support Time Manager";
 
+    // 👇 FIX: Har baar naya Transaction ID generate karo
+    String transactionRefId = DateTime.now().millisecondsSinceEpoch.toString();
+
+    // 👇 FIX: Amount ko '.00' format me bhejo (Strict apps ke liye)
+    String formattedAmount = "$amount.00";
+
     // Yahan 'amount' dynamic ho gaya hai
     final Uri upiUrl = Uri.parse(
-        "upi://pay?pa=$upiId&pn=$name&tn=$note&am=$amount&cu=INR"
+        "upi://pay?pa=$upiId&pn=$name&tn=$note&am=$formattedAmount&cu=INR&tr=$transactionRefId"
     );
-    if (!await launchUrl(upiUrl, mode: LaunchMode.externalApplication)) {
-      debugPrint("UPI App not open");
+    try {
+      // 👇 FIX: 'launchUrl' ko direct call karo with explicit mode
+      if (!await launchUrl(upiUrl, mode: LaunchMode.externalApplication)) {
+        // Agar koi app nahi khuli
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+             const SnackBar(content: Text("No UPI App found!"), backgroundColor: Colors.red),
+          );
+        }
+      }
+    } catch (e) {
+      print("UPI Error: $e");
     }
   }
   Widget _buildDonationBox(String amount) {
