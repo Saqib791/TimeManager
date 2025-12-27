@@ -1356,7 +1356,62 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   static const platform = MethodChannel('com.example.time_app/settings');
 
+<<<<<<< HEAD
   // --- DONATION LOGIC (ONLY BUY ME A COFFEE) ---
+=======
+  // --- DONATION LOGIC START ---
+Future<void> _payWithUPI(String amount) async {
+    const String upiId = "saqibqamar7866@okicici"; 
+    
+    // 👇 FIX: Sirf Amount set karo (Example: 10.00)
+    String formattedAmount = "$amount.00";
+  
+    // Ab GPay/PhonePe khud tumhara naam bank se check karega.
+    final Uri upiUrl = Uri.parse(
+        "upi://pay?pa=$upiId&am=$formattedAmount&cu=INR"
+    );
+
+    try {
+      // Launch Mode ko 'externalNonBrowserApplication' karo (Best for UPI)
+      if (!await launchUrl(upiUrl, mode: LaunchMode.externalNonBrowserApplication)) {
+        if (mounted) {
+          // 👇 Agar app na khule, to ID copy karwa do (Backup Plan)
+          Clipboard.setData(const ClipboardData(text: upiId));
+          ScaffoldMessenger.of(context).showSnackBar(
+             const SnackBar(content: Text("UPI App not found. ID Copied to Clipboard!"), backgroundColor: Colors.orange),
+          );
+        }
+      }
+    } catch (e) {
+      print("UPI Error: $e");
+      // Error aane par bhi user ki help ke liye ID copy karwa do
+      Clipboard.setData(const ClipboardData(text: upiId));
+      if(mounted){
+        ScaffoldMessenger.of(context).showSnackBar(
+             const SnackBar(content: Text("Error opening app. UPI ID Copied!"), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+  Widget _buildDonationBox(String amount) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: () => _payWithUPI(amount), // Button dabte hi wo amount jayega
+        child: Container(
+          margin: const EdgeInsets.symmetric(horizontal: 4),
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          decoration: BoxDecoration(
+            color: Colors.green[700],
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.white24),
+          ),
+          alignment: Alignment.center,
+          child: Text("₹$amount", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        ),
+      ),
+    );
+  }
+>>>>>>> 31058bdb48e33c264d30826c62d4a7e0517e9d26
   Future<void> _openBuyMeCoffee() async {
     final Uri url = Uri.parse('https://buymeacoffee.com/saqib791');
     if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
