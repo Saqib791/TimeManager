@@ -33,6 +33,8 @@ ValueNotifier<bool> enableNotificationSound = ValueNotifier(true); // 👈 Ye ab
 // 👇 NEW: Sticky Notification Toggle (Default true rakh rahe hain)
 ValueNotifier<bool> enableStickyNotification = ValueNotifier(true);
 ValueNotifier<bool> resetTimerOnSwitch = ValueNotifier(false);
+// 👇 NEW: Auto-Start Toggle
+ValueNotifier<bool> autoStartOnSwitch = ValueNotifier(true);
 
 ValueNotifier<String> soundAlarm = ValueNotifier("alarm.mp3");
 ValueNotifier<String> soundBreak = ValueNotifier("bell.mp3");
@@ -243,6 +245,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
     enableNotificationSound.value = prefs.getBool('enable_notif_sound') ?? true;
     resetTimerOnSwitch.value = prefs.getBool('reset_timer_switch') ?? false;
     enableStickyNotification.value = prefs.getBool('sticky_notif') ?? true;
+    autoStartOnSwitch.value = prefs.getBool('auto_start_switch') ?? true;
 
     mainColor.value = Color(prefs.getInt('color_main') ?? Colors.cyanAccent.value);
     breakColor.value = Color(prefs.getInt('color_break') ?? Colors.pinkAccent.value);
@@ -643,7 +646,7 @@ class _TaskListScreenState extends State<TaskListScreen> with AutomaticKeepAlive
   @override Widget build(BuildContext context) { super.build(context); List<dynamic> currentTasks = _getCurrentDayTasks(); bool isToday = DateFormat('yyyy-MM-dd').format(selectedDate) == DateFormat('yyyy-MM-dd').format(DateTime.now()); return Scaffold(appBar: AppBar(title: Text("TASKS", style: TextStyle(color: mainColor.value, fontWeight: FontWeight.bold, letterSpacing: 2.0)), centerTitle: true), body: Column(children: [Container(padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 0), color: const Color(0xFF111111), child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [IconButton(icon: const Icon(Icons.arrow_back_ios, size: 18, color: Colors.grey), onPressed: () => _changeDate(-1)), GestureDetector(onTap: _pickDate, child: Row(children: [Icon(Icons.calendar_today, size: 16, color: mainColor.value), const SizedBox(width: 8), Text(isToday ? "TODAY" : DateFormat('EEE, dd MMM').format(selectedDate).toUpperCase(), style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16, letterSpacing: 1.0))])), IconButton(icon: const Icon(Icons.arrow_forward_ios, size: 18, color: Colors.grey), onPressed: () => _changeDate(1))])), Expanded(child: currentTasks.isEmpty ? Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.event_note, size: 60, color: Colors.grey.withOpacity(0.3)), const SizedBox(height: 10), Text("No tasks for ${DateFormat('dd MMM').format(selectedDate)}", style: TextStyle(color: Colors.grey.withOpacity(0.5), fontSize: 16))])) : ListView.builder(itemCount: currentTasks.length, padding: const EdgeInsets.all(15), itemBuilder: (context, index) { var task = currentTasks[index]; return Container(margin: const EdgeInsets.only(bottom: 15), decoration: BoxDecoration(color: const Color(0xFF1E1E1E), borderRadius: BorderRadius.circular(10), border: Border.all(color: task['isDone'] ? examColor.value.withOpacity(0.5) : mainColor.value.withOpacity(0.5))), child: ListTile(onTap: () => _toggleTask(index), leading: Icon(task['isDone'] ? Icons.check_circle : Icons.radio_button_unchecked, color: task['isDone'] ? examColor.value : mainColor.value), title: Text(task['title'], style: TextStyle(fontSize: 18, color: task['isDone'] ? Colors.grey : Colors.white, decoration: task['isDone'] ? TextDecoration.lineThrough : null, decorationColor: examColor.value, decorationThickness: 2)), trailing: IconButton(icon: const Icon(Icons.delete_outline, color: Colors.redAccent), onPressed: () => _deleteTask(index)))); }))],), floatingActionButton: FloatingActionButton(onPressed: () { playButtonFeedback(); _addNewTask(); }, backgroundColor: mainColor.value, child: const Icon(Icons.add, color: Colors.black))); }
 }
 
-// ================== 2. TIMER SCREEN (BUG FREE VERSION) ==================
+// ================== 2. TIMER SCREEN (UPDATED: HOURLY ALERTS) ==================
 class UniversalTimerScreen extends StatefulWidget {
   const UniversalTimerScreen({super.key});
   @override
@@ -682,7 +685,9 @@ class _UniversalTimerScreenState extends State<UniversalTimerScreen> with Automa
   int totalRounds = 4;
   int currentRound = 1;
 
-  // 👇 FIX: initState ko replace karo
+  // 👇 NEW: Track karega ki last alert kab bajaya tha
+  int _lastAlertedHour = 0;
+
   @override
   void initState() {
     super.initState();
@@ -699,32 +704,22 @@ class _UniversalTimerScreenState extends State<UniversalTimerScreen> with Automa
     });
     enableStickyNotification.addListener(() {
       if (mounted) {
-        _updateNotification(silent: false); // Force update notification
+        _updateNotification(silent: false);
       }
     });
   }
 
-// 👇 FIX: Har 1 second pe data pakdega
   Future<void> _saveCurrentProgress() async {
     if (timerMode == 0) {
-      // 1. Current Total Time Calculate karo
       int currentTotal = isStudyMode ? _studyStopwatchTime : _breakStopwatchTime;
-
       if (isTimerRunning && _stopwatchStartTime != null) {
         currentTotal += DateTime.now().difference(_stopwatchStartTime!).inSeconds;
       }
-
-      // 2. Anchor (Pichla saved point) nikalo
       int anchor = isStudyMode ? _studyAnchor : _breakAnchor;
-
-      // 3. Delta (Sirf naya time) nikalo
       int delta = currentTotal - anchor;
 
-      // 4. Save Logic (Agar delta 1 ya usse zyada hai)
-      if (delta >= 1) { // 👈 Yahan change kiya (Pehle > 2 tha)
+      if (delta >= 1) {
         await _saveSession(delta, selectedSubject, isStudyMode);
-
-        // Anchor Update karo
         if (isStudyMode) _studyAnchor = currentTotal;
         else _breakAnchor = currentTotal;
       }
@@ -741,23 +736,12 @@ class _UniversalTimerScreenState extends State<UniversalTimerScreen> with Automa
     }
   }
 
-// 👇 FIX: Pause Logic Update
+  // 👇 FIX: Popup Logic Hata Diya
   void _handlePause() async {
-    // 1. Pehle data save karo
     if (timerMode == 0) {
       await _saveCurrentProgress();
-
-      // 2 Hour Alert Check
-      int currentTotal = isStudyMode ? _studyStopwatchTime : _breakStopwatchTime;
-      if (currentTotal >= 7200) {
-        if (isStudyMode) {
-          _showCompletionDialog(customTitle: "Great Job! 🎉", customMsg: "You studied for over 2 hours!");
-        } else {
-          _showCompletionDialog(customTitle: "Time to Focus! ⚠️", customMsg: "Break is over 2 hours. Let's go to study!");
-        }
-      }
+      // ❌ Yahan se 2 Hours wala POPUP CODE DELETE kar diya hai.
     } else {
-      // Pomodoro Logic
       if (_targetEndTime != null) {
         _countdownRemaining = _targetEndTime!.difference(DateTime.now()).inSeconds;
         if (_countdownRemaining < 0) _countdownRemaining = 0;
@@ -771,13 +755,10 @@ class _UniversalTimerScreenState extends State<UniversalTimerScreen> with Automa
         _timer?.cancel();
       });
     }
-
     _updateNotification(silent: false, isTick: false);
   }
 
-// 👇 FIX: Isme hum Service START kar rahe hain
   void _handleResume() async {
-    // 1. Service ko start karo (Agar band hai to)
     var service = FlutterBackgroundService();
     if (!await service.isRunning()) {
       service.startService();
@@ -802,7 +783,7 @@ class _UniversalTimerScreenState extends State<UniversalTimerScreen> with Automa
       _handleResume();
   }
 
-  // 👇 TIMER LOOP
+  // 👇 MAIN LOGIC: Hourly Notification Check Here
   void _startTimerLoop() {
     _timer?.cancel();
     _updateNotification(silent: false, isTick: false);
@@ -813,35 +794,71 @@ class _UniversalTimerScreenState extends State<UniversalTimerScreen> with Automa
       }
       setState(() {
         if (timerMode != 0 && _targetEndTime != null) {
-          _countdownRemaining =
-              _targetEndTime!.difference(DateTime.now()).inSeconds;
+          _countdownRemaining = _targetEndTime!.difference(DateTime.now()).inSeconds;
           if (_countdownRemaining <= 0) {
             _countdownRemaining = 0;
             _timer?.cancel();
             cancelNotification();
             _handleTimerComplete();
           }
+        } 
+        
+        // 👇 NEW: Hourly Alert Check (Sirf Stopwatch Mode me)
+        else if (timerMode == 0 && isTimerRunning) {
+           int totalSeconds = _getCurrentSeconds();
+           int currentHour = totalSeconds ~/ 3600; // 3600 sec = 1 Hour
+
+           // Agar 1 ghanta complete hua aur pehle alert nahi kiya
+           if (currentHour > 0 && currentHour > _lastAlertedHour) {
+             _lastAlertedHour = currentHour; // Update flag
+             _showHourlyAlert(currentHour); // Show Notification
+           }
         }
       });
       _updateNotification(silent: true, isTick: true);
     });
   }
 
-// 👇 FIX: Is function ko replace karo. Ye Zero wali problem jad se khatam karega.
+  // 👇 NEW FUNCTION: Hourly Alert Notification
+  void _showHourlyAlert(int hours) {
+    String title = "";
+    String body = "";
+
+    if (isStudyMode) {
+      title = "Keep Grinding! 🔥";
+      body = "You studied for $hours hour(s) continuously. Let's grind one more hour!";
+    } else {
+      title = "Break Alert ⚠️";
+      body = "You've been on break for $hours hour(s). It's time to study!";
+    }
+
+    // Ek High Priority Notification bajao (Popup nahi, bas upar se aayega)
+    flutterLocalNotificationsPlugin.show(
+      999, // Unique ID for alerts
+      title,
+      body,
+      const NotificationDetails(
+        android: AndroidNotificationDetails(
+          'hourly_alert_channel', // Alag Channel ID
+          'Hourly Alerts',
+          importance: Importance.max,
+          priority: Priority.high,
+          playSound: true,
+          enableVibration: true,
+        ),
+      ),
+    );
+    
+    // Optional: Sound bhi baja sakte ho
+    playGlobalSound(soundAlarm.value); 
+  }
+
   int _getCurrentSeconds() {
     if (timerMode == 0) {
-      // Pehle variable me wo time lo jo save ho chuka hai
       int storedTime = isStudyMode ? _studyStopwatchTime : _breakStopwatchTime;
-
-      // Agar timer chal raha hai, to (Abhi ka Time - Start Time) + Purana Saved Time
       if (isTimerRunning && _stopwatchStartTime != null) {
-        return storedTime + DateTime
-            .now()
-            .difference(_stopwatchStartTime!)
-            .inSeconds;
+        return storedTime + DateTime.now().difference(_stopwatchStartTime!).inSeconds;
       }
-
-      // Agar ruka hua hai, to sirf saved time dikhao
       return storedTime;
     } else {
       return _countdownRemaining;
@@ -862,9 +879,7 @@ class _UniversalTimerScreenState extends State<UniversalTimerScreen> with Automa
     });
   }
 
-// 👇 FIX: Switch Logic with Settings Check
   void _toggleStudyBreak(bool isStudy) async {
-    // 1. Purana data save karo
     if (timerMode == 0) {
       await _saveCurrentProgress();
     } else {
@@ -875,8 +890,6 @@ class _UniversalTimerScreenState extends State<UniversalTimerScreen> with Automa
 
     setState(() {
       isStudyMode = isStudy;
-
-      // Subject Selection
       if (isStudy) {
         if (studySubjects.contains(lastStudySubject)) selectedSubject = lastStudySubject;
         else if (studySubjects.isNotEmpty) selectedSubject = studySubjects[0];
@@ -889,36 +902,39 @@ class _UniversalTimerScreenState extends State<UniversalTimerScreen> with Automa
         _resetTimerLogic(false);
       } else {
         // === STUDYWATCH LOGIC ===
-
-        // 👇 AGAR SETTING ON HAI, TABHI RESET KARO
         if (resetTimerOnSwitch.value) {
           _studyStopwatchTime = 0;
           _breakStopwatchTime = 0;
-          _studyAnchor = 0; // Anchor bhi reset karna zaruri hai
+          _studyAnchor = 0;
           _breakAnchor = 0;
         }
 
-        // Timer start karo (Continue karega agar setting OFF hai)
-        _stopwatchStartTime = DateTime.now();
-        isTimerRunning = true;
+        // 👇 Alert Reset karo jab mode change ho
+        _lastAlertedHour = 0;
+
+        // Auto-Start Logic
+        if (autoStartOnSwitch.value) {
+           _stopwatchStartTime = DateTime.now();
+           isTimerRunning = true;
+        } else {
+           _stopwatchStartTime = null; 
+           isTimerRunning = false;
+        }
       }
     });
 
     if (timerMode == 0) {
       var service = FlutterBackgroundService();
-      // Agar service band thi to chalu karo
-      if (!await service.isRunning()) {
-        await service.startService();
-      }
-
-      // 👇 YE LINE ADD KARO: Taki button dabte hi Icon badal jaye
+      if (isTimerRunning) {
+         if (!await service.isRunning()) {
+           await service.startService();
+         }
+         _startTimerLoop();
+      } 
       _updateNotification(silent: false);
-
-      _startTimerLoop();
     }
   }
 
-// 👇 FIX: Exam End Notification (Congratulations)
   void _handleTimerComplete() {
     int duration = isStudyMode ? (focusHours * 3600 + focusMinutes * 60 + focusSeconds) : (breakHours * 3600 + breakMinutes * 60 + breakSeconds);
     _saveSession(duration, selectedSubject, isStudyMode);
@@ -948,17 +964,14 @@ class _UniversalTimerScreenState extends State<UniversalTimerScreen> with Automa
           _handleResume();
         } else {
           playGlobalSound(soundDone.value);
-          // Pomodoro Done Msg
           flutterLocalNotificationsPlugin.show(999, "Session Complete! 🎉", "Well done! All rounds finished.", const NotificationDetails(android: AndroidNotificationDetails('alert_channel', 'Alerts', importance: Importance.max, priority: Priority.high)));
           _fullReset();
           _showCompletionDialog();
         }
       }
     } else {
-      // === EXAM MODE DONE ===
+      // === EXAM MODE ===
       playGlobalSound(soundDone.value);
-
-      // 👇 FIX: Exam End Notification (Clean Look)
       flutterLocalNotificationsPlugin.show(
           889,
           "Congratulations! 🎓",
@@ -969,51 +982,40 @@ class _UniversalTimerScreenState extends State<UniversalTimerScreen> with Automa
                 'Exam Alerts',
                 importance: Importance.max,
                 priority: Priority.high,
-
-                // ❌ largeIcon: ... <-- YE HATA DO
-
-                icon: 'timer_icon', // Sirf ye rahega
+                icon: 'timer_icon',
                 color: Color(0xFF00E5FF),
                 colorized: true,
               )
           )
       );
-
-      _fullReset(); // Ye service band karega, lekin upar wali notification rahegi
+      _fullReset();
       _showCompletionDialog(customTitle: "Exam Finished!", customMsg: "Congratulations on completing your exam! 🎉");
     }
   }
 
-  // 👇 FIX: Isme hum Service STOP kar rahe hain
   void _fullReset() {
-    // Service ko bolo ki band ho jaye (Notification hata de)
     FlutterBackgroundService().invoke('stopService');
-
     setState(() {
       isTimerRunning = false;
       isStudyMode = true;
-
-      // 👇 FIX: YE LINE ADD KARO (Round ko wapas 1 par laao)
       currentRound = 1;
-
       if (studySubjects.contains(lastStudySubject))
         selectedSubject = lastStudySubject;
-
       _resetTimerLogic(true);
     });
   }
 
-  // 👇 FIX: Reset Logic
   void _resetTimerLogic(bool hardReset) {
     _timer?.cancel();
     _stopwatchStartTime = null;
     _targetEndTime = null;
+    _lastAlertedHour = 0; // 👇 Yahan bhi reset zaruri hai
 
     if (timerMode == 0) {
       if (hardReset) {
         _studyStopwatchTime = 0;
         _breakStopwatchTime = 0;
-        _studyAnchor = 0; // Naye variables reset
+        _studyAnchor = 0; 
         _breakAnchor = 0;
       }
     } else {
@@ -1022,14 +1024,8 @@ class _UniversalTimerScreenState extends State<UniversalTimerScreen> with Automa
     }
   }
 
-// 👇 FIX: Ab 1 second ka data bhi save hoga
   Future<void> _saveSession(int seconds, String subject, bool isStudy) async {
-    // 1. Agar Pomodoro ka Break hai, to SAVE MAT KARO
-    if (timerMode == 1 && !isStudy) {
-      return;
-    }
-
-    // 2. Sirf 0 second wale ignore karo (1 sec allow hai)
+    if (timerMode == 1 && !isStudy) return;
     if (seconds < 1) return;
 
     final prefs = await SharedPreferences.getInstance();
@@ -1048,12 +1044,10 @@ class _UniversalTimerScreenState extends State<UniversalTimerScreen> with Automa
     historyList.add(session);
 
     await prefs.setString('study_history', jsonEncode(historyList));
-    updateJsonFile(); // Backup file update
+    updateJsonFile();
     print("SAVED: $subject - $seconds seconds");
   }
 
-// 👇 FIX: Blue Background Hata Diya (Ab sirf Icon dikhega)
-  // 👇 FIX: Dynamic Icon Logic Added
   void _updateNotification({bool silent = false, bool isTick = false}) {
     if (!isTimerRunning && silent) return;
 
@@ -1080,11 +1074,8 @@ class _UniversalTimerScreenState extends State<UniversalTimerScreen> with Automa
       timeText = "Tap Resume to continue";
     }
 
-    // 👇 NEW: Icon Decide Karo
-    // Agar Study Mode ya Exam hai to 'study' image, warna 'break' image
     String currentIcon = (isStudyMode || timerMode == 2) ? 'study' : 'break_icon';
 
-    // Service Update Bhejo
     FlutterBackgroundService().invoke(
       'updateNotification',
       {
@@ -1092,13 +1083,10 @@ class _UniversalTimerScreenState extends State<UniversalTimerScreen> with Automa
         'body': timeText,
         'showPause': isTimerRunning,
         'largeIcon': currentIcon,
-
-        // 👇 YE LINE HONI CHAHIYE (Value bhejni padegi)
         'isSticky': enableStickyNotification.value,
       },
     );
   }
-
 
   String _formatTime() {
     int totalSec = _getCurrentSeconds();
@@ -1109,24 +1097,18 @@ class _UniversalTimerScreenState extends State<UniversalTimerScreen> with Automa
         2, '0')}:${sec.toString().padLeft(2, '0')}";
   }
 
-  // 👇 Fix: super.build(context) added
   @override
   Widget build(BuildContext context) {
     super.build(context);
     Color primaryColor = (timerMode == 2 ? examColor.value : mainColor.value);
     Color secondaryColor = isStudyMode ? primaryColor : breakColor.value;
-    bool isLandscape = MediaQuery
-        .of(context)
-        .orientation == Orientation.landscape;
+    bool isLandscape = MediaQuery.of(context).orientation == Orientation.landscape;
     if (isLandscape) {
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     } else {
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     }
     return Scaffold(backgroundColor: Colors.black,
-        // Naya Code:
-        // UniversalTimerScreen ke andar 'build' method mein
-
         appBar: isLandscape
             ? null
             : AppBar(
@@ -1138,7 +1120,6 @@ class _UniversalTimerScreenState extends State<UniversalTimerScreen> with Automa
           centerTitle: true,
           backgroundColor: Colors.black,
           actions: [
-
             if (timerMode != 0)
               IconButton(
                   onPressed: _openSettings,
@@ -1151,14 +1132,16 @@ class _UniversalTimerScreenState extends State<UniversalTimerScreen> with Automa
             child: _buildPortraitLayout(primaryColor, secondaryColor)));
   }
 
+  // ... (Baaki ke functions: _loadData, _saveSubjects, _manageSubjects, _addSubject, _openSettings, etc. - Ye sab SAME rahenge, unhe change mat karna)
+  // Bas 'UniversalTimerScreen' class ke andar ka logic replace karna tha.
+  // Main niche baaki helper functions de raha hu taaki koi error na aaye.
+
   Future<void> _loadData() async {
     final prefs = await SharedPreferences.getInstance();
     if (mounted) {
       setState(() {
-        studySubjects = prefs.getStringList('study_subjects') ??
-            ["Biology", "Physics", "Chemistry"];
-        breakActivities = prefs.getStringList('break_activities') ??
-            ["Gaming", "Social Media", "Rest"];
+        studySubjects = prefs.getStringList('study_subjects') ?? ["Biology", "Physics", "Chemistry"];
+        breakActivities = prefs.getStringList('break_activities') ?? ["Gaming", "Social Media", "Rest"];
         String? colorString = prefs.getString('subject_colors');
         if (colorString != null) {
           subjectColors = Map<String, int>.from(jsonDecode(colorString));
@@ -1166,14 +1149,11 @@ class _UniversalTimerScreenState extends State<UniversalTimerScreen> with Automa
         if (studySubjects.isNotEmpty) lastStudySubject = studySubjects[0];
         if (breakActivities.isNotEmpty) lastBreakActivity = breakActivities[0];
         if (isStudyMode) {
-          if (studySubjects.contains(lastStudySubject))
-            selectedSubject = lastStudySubject;
+          if (studySubjects.contains(lastStudySubject)) selectedSubject = lastStudySubject;
           else if (studySubjects.isNotEmpty) selectedSubject = studySubjects[0];
         } else {
-          if (breakActivities.contains(lastBreakActivity))
-            selectedSubject = lastBreakActivity;
-          else
-          if (breakActivities.isNotEmpty) selectedSubject = breakActivities[0];
+          if (breakActivities.contains(lastBreakActivity)) selectedSubject = lastBreakActivity;
+          else if (breakActivities.isNotEmpty) selectedSubject = breakActivities[0];
         }
       });
     }
@@ -1192,48 +1172,34 @@ class _UniversalTimerScreenState extends State<UniversalTimerScreen> with Automa
       return StatefulBuilder(builder: (context, setDialogState) {
         List<String> activeList = isStudyMode ? studySubjects : breakActivities;
         return AlertDialog(backgroundColor: const Color(0xFF1E1E1E),
-            title: Text(
-                "Manage List", style: TextStyle(color: mainColor.value)),
+            title: Text("Manage List", style: TextStyle(color: mainColor.value)),
             content: SizedBox(width: double.maxFinite,
                 height: 300,
                 child: activeList.isEmpty
-                    ? const Center(child: Text(
-                    "Empty List", style: TextStyle(color: Colors.grey)))
+                    ? const Center(child: Text("Empty List", style: TextStyle(color: Colors.grey)))
                     : ListView.builder(itemCount: activeList.length,
                     itemBuilder: (context, index) {
                       String name = activeList[index];
-                      Color itemColor = subjectColors.containsKey(name) ? Color(
-                          subjectColors[name]!) : Colors.white;
-                      return ListTile(leading: CircleAvatar(
-                          backgroundColor: itemColor, radius: 6),
-                          title: Text(name, style: TextStyle(
-                              color: itemColor, fontWeight: FontWeight.bold)),
-                          trailing: IconButton(icon: const Icon(
-                              Icons.delete, color: Colors.redAccent),
+                      Color itemColor = subjectColors.containsKey(name) ? Color(subjectColors[name]!) : Colors.white;
+                      return ListTile(leading: CircleAvatar(backgroundColor: itemColor, radius: 6),
+                          title: Text(name, style: TextStyle(color: itemColor, fontWeight: FontWeight.bold)),
+                          trailing: IconButton(icon: const Icon(Icons.delete, color: Colors.redAccent),
                               onPressed: () {
                                 setDialogState(() {
                                   setState(() {
                                     if (isStudyMode) {
                                       studySubjects.removeAt(index);
-                                      if (selectedSubject == name &&
-                                          studySubjects.isNotEmpty)
-                                        selectedSubject = studySubjects[0];
+                                      if (selectedSubject == name && studySubjects.isNotEmpty) selectedSubject = studySubjects[0];
                                     } else {
                                       breakActivities.removeAt(index);
-                                      if (selectedSubject == name &&
-                                          breakActivities.isNotEmpty)
-                                        selectedSubject = breakActivities[0];
+                                      if (selectedSubject == name && breakActivities.isNotEmpty) selectedSubject = breakActivities[0];
                                     }
                                   });
                                 });
                                 _saveSubjects();
                               }));
                     })),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(context),
-                  child: Text(
-                      "CLOSE", style: TextStyle(color: mainColor.value)))
-            ]);
+            actions: [TextButton(onPressed: () => Navigator.pop(context), child: Text("CLOSE", style: TextStyle(color: mainColor.value)))]);
       });
     });
   }
@@ -1243,499 +1209,109 @@ class _UniversalTimerScreenState extends State<UniversalTimerScreen> with Automa
     Color pickerColor = mainColor.value;
     showDialog(context: context, builder: (context) {
       return StatefulBuilder(builder: (context, setDialogState) {
-        return AlertDialog(scrollable: true,
-            backgroundColor: const Color(0xFF1E1E1E),
-            title: Text(isStudyMode ? "Add Subject" : "Add Activity",
-                style: TextStyle(color: mainColor.value)),
-            content: Column(mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(controller: ctrl,
-                    autofocus: true,
-                    style: const TextStyle(color: Colors.white),
-                    cursorColor: mainColor.value,
-                    decoration: InputDecoration(hintText: "Enter Name...",
-                        hintStyle: const TextStyle(color: Colors.grey),
-                        enabledBorder: UnderlineInputBorder(
-                            borderSide: BorderSide(color: mainColor.value)),
-                        focusedBorder: UnderlineInputBorder(
-                            borderSide: BorderSide(color: mainColor.value,
-                                width: 2)))),
+        return AlertDialog(scrollable: true, backgroundColor: const Color(0xFF1E1E1E),
+            title: Text(isStudyMode ? "Add Subject" : "Add Activity", style: TextStyle(color: mainColor.value)),
+            content: Column(mainAxisSize: MainAxisSize.min, children: [
+                TextField(controller: ctrl, autofocus: true, style: const TextStyle(color: Colors.white), cursorColor: mainColor.value,
+                    decoration: InputDecoration(hintText: "Enter Name...", hintStyle: const TextStyle(color: Colors.grey), enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: mainColor.value)), focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: mainColor.value, width: 2)))),
                 const SizedBox(height: 25),
-                Row(mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text("Pick Color:",
-                          style: TextStyle(color: Colors.grey, fontSize: 16)),
+                Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                      const Text("Pick Color:", style: TextStyle(color: Colors.grey, fontSize: 16)),
                       GestureDetector(onTap: () {
-                        showDialog(context: context,
-                            builder: (context) =>
-                                AlertDialog(scrollable: true,
-                                    backgroundColor: Colors.grey[900],
-                                    title: const Text("Pick a Color",
-                                        style: TextStyle(color: Colors.white)),
-                                    content: SingleChildScrollView(
-                                        child: ColorPicker(
-                                            pickerColor: pickerColor,
-                                            onColorChanged: (color) {
-                                              pickerColor = color;
-                                            },
-                                            enableAlpha: false,
-                                            displayThumbColor: true,
-                                            paletteType: PaletteType.hsvWithHue,
-                                            labelTypes: const [],
-                                            pickerAreaHeightPercent: 0.7)),
-                                    actions: [
-                                      ElevatedButton(
-                                          style: ElevatedButton.styleFrom(
-                                              backgroundColor: mainColor.value),
-                                          onPressed: () {
-                                            setDialogState(() {});
-                                            Navigator.of(context).pop();
-                                          },
-                                          child: const Text("SELECT",
-                                              style: TextStyle(
-                                                  color: Colors.black,
-                                                  fontWeight: FontWeight.bold)))
-                                    ]));
-                      }, child: Container(padding: const EdgeInsets.all(3),
-                          decoration: BoxDecoration(shape: BoxShape.circle,
-                              border: Border.all(
-                                  color: Colors.white, width: 1)),
-                          child: CircleAvatar(backgroundColor: pickerColor,
-                              radius: 18,
-                              child: const Icon(
-                                  Icons.edit, color: Colors.white, size: 16))))
+                        showDialog(context: context, builder: (context) => AlertDialog(scrollable: true, backgroundColor: Colors.grey[900], title: const Text("Pick a Color", style: TextStyle(color: Colors.white)), content: SingleChildScrollView(child: ColorPicker(pickerColor: pickerColor, onColorChanged: (color) { pickerColor = color; }, enableAlpha: false, displayThumbColor: true, paletteType: PaletteType.hsvWithHue, labelTypes: const [], pickerAreaHeightPercent: 0.7)), actions: [ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: mainColor.value), onPressed: () { setDialogState(() {}); Navigator.of(context).pop(); }, child: const Text("SELECT", style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)))]));
+                      }, child: Container(padding: const EdgeInsets.all(3), decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 1)), child: CircleAvatar(backgroundColor: pickerColor, radius: 18, child: const Icon(Icons.edit, color: Colors.white, size: 16))))
                     ])
-              ],),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(context),
-                  child: const Text(
-                      "CANCEL", style: TextStyle(color: Colors.redAccent))),
-              ElevatedButton(style: ElevatedButton.styleFrom(
-                  backgroundColor: mainColor.value),
-                  onPressed: () {
-                    if (ctrl.text.isNotEmpty) {
-                      setState(() {
-                        if (isStudyMode) {
-                          studySubjects.add(ctrl.text);
-                          selectedSubject = ctrl.text;
-                          lastStudySubject = ctrl.text;
-                        } else {
-                          breakActivities.add(ctrl.text);
-                          selectedSubject = ctrl.text;
-                          lastBreakActivity = ctrl.text;
-                        }
-                        subjectColors[ctrl.text] = pickerColor.value;
-                      });
-                      _saveSubjects();
-                      Navigator.pop(context);
-                    }
-                  },
-                  child: const Text("ADD", style: TextStyle(
-                      color: Colors.black, fontWeight: FontWeight.bold)))
-            ]);
+              ]),
+            actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text("CANCEL", style: TextStyle(color: Colors.redAccent))), ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: mainColor.value), onPressed: () { if (ctrl.text.isNotEmpty) { setState(() { if (isStudyMode) { studySubjects.add(ctrl.text); selectedSubject = ctrl.text; lastStudySubject = ctrl.text; } else { breakActivities.add(ctrl.text); selectedSubject = ctrl.text; lastBreakActivity = ctrl.text; } subjectColors[ctrl.text] = pickerColor.value; }); _saveSubjects(); Navigator.pop(context); } }, child: const Text("ADD", style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)))]);
       });
     });
   }
 
   void _openSettings() {
-    int tempFocusH = focusHours;
-    int tempFocusM = focusMinutes;
-    int tempFocusS = focusSeconds;
-    int tempBreakH = breakHours;
-    int tempBreakM = breakMinutes;
-    int tempBreakS = breakSeconds;
+    int tempFocusH = focusHours; int tempFocusM = focusMinutes; int tempFocusS = focusSeconds;
+    int tempBreakH = breakHours; int tempBreakM = breakMinutes; int tempBreakS = breakSeconds;
     int tempRounds = totalRounds;
-    showModalBottomSheet(context: context,
-        backgroundColor: const Color(0xFF121212),
-        isScrollControlled: true,
-        shape: const RoundedRectangleBorder(
-            borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-        builder: (context) {
-          return SizedBox(height: MediaQuery
-              .of(context)
-              .size
-              .height * 0.7,
-              child: Padding(padding: const EdgeInsets.all(20),
-                  child: Column(children: [
-                    Text(timerMode == 1
-                        ? "POMODORO SETTINGS"
-                        : "EXAM TIMER SETTINGS", style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold)),
+    showModalBottomSheet(context: context, backgroundColor: const Color(0xFF121212), isScrollControlled: true, shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))), builder: (context) {
+          return SizedBox(height: MediaQuery.of(context).size.height * 0.7, child: Padding(padding: const EdgeInsets.all(20), child: Column(children: [
+                    Text(timerMode == 1 ? "POMODORO SETTINGS" : "EXAM TIMER SETTINGS", style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
                     const SizedBox(height: 20),
-                    const Text(
-                        "Focus Duration", style: TextStyle(color: Colors.grey)),
-                    Expanded(child: Row(children: [
-                      Expanded(child: _buildScrollWheel(
-                          24, tempFocusH, (v) => tempFocusH = v)),
-                      const Text(":"),
-                      Expanded(child: _buildScrollWheel(
-                          60, tempFocusM, (v) => tempFocusM = v)),
-                      const Text(":"),
-                      Expanded(child: _buildScrollWheel(
-                          60, tempFocusS, (v) => tempFocusS = v))
-                    ])),
+                    const Text("Focus Duration", style: TextStyle(color: Colors.grey)),
+                    Expanded(child: Row(children: [Expanded(child: _buildScrollWheel(24, tempFocusH, (v) => tempFocusH = v)), const Text(":"), Expanded(child: _buildScrollWheel(60, tempFocusM, (v) => tempFocusM = v)), const Text(":"), Expanded(child: _buildScrollWheel(60, tempFocusS, (v) => tempFocusS = v))])),
                     if (timerMode == 1) ...[
+                      const SizedBox(height: 10), const Text("Break Duration", style: TextStyle(color: Colors.grey)),
+                      Expanded(child: Row(children: [Expanded(child: _buildScrollWheel(24, tempBreakH, (v) => tempBreakH = v)), const Text(":"), Expanded(child: _buildScrollWheel(60, tempBreakM, (v) => tempBreakM = v)), const Text(":"), Expanded(child: _buildScrollWheel(60, tempBreakS, (v) => tempBreakS = v))])),
                       const SizedBox(height: 10),
-                      const Text("Break Duration",
-                          style: TextStyle(color: Colors.grey)),
-                      Expanded(child: Row(
-                          children: [
-                            Expanded(child: _buildScrollWheel(
-                                24, tempBreakH, (v) => tempBreakH = v)),
-                            const Text(":"),
-                            Expanded(child: _buildScrollWheel(
-                                60, tempBreakM, (v) => tempBreakM = v)),
-                            const Text(":"),
-                            Expanded(child: _buildScrollWheel(
-                                60, tempBreakS, (v) => tempBreakS = v))
-                          ])),
-                      const SizedBox(height: 10),
-                      Row(mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Text(
-                                "Rounds", style: TextStyle(color: Colors.grey)),
-                            SizedBox(width: 80,
-                                height: 80,
-                                child: _buildScrollWheel(15, tempRounds, (v) =>
-                                tempRounds = v, offset: 1))
-                          ])
+                      Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [const Text("Rounds", style: TextStyle(color: Colors.grey)), SizedBox(width: 80, height: 80, child: _buildScrollWheel(15, tempRounds, (v) => tempRounds = v, offset: 1))])
                     ],
-                    SizedBox(width: double.infinity,
-                        child: ElevatedButton(onPressed: () {
-                          setState(() {
-                            focusHours = tempFocusH;
-                            focusMinutes = tempFocusM;
-                            focusSeconds = tempFocusS;
-                            breakHours = tempBreakH;
-                            breakMinutes = tempBreakM;
-                            breakSeconds = tempBreakS;
-                            totalRounds = tempRounds;
-                            _resetTimerLogic(true);
-                          });
-                          Navigator.pop(context);
-                        },
-                            style: ElevatedButton.styleFrom(
-                                backgroundColor: timerMode == 2 ? examColor
-                                    .value : mainColor.value),
-                            child: const Text("SAVE", style: TextStyle(
-                                color: Colors.black,
-                                fontWeight: FontWeight.bold))))
+                    SizedBox(width: double.infinity, child: ElevatedButton(onPressed: () { setState(() { focusHours = tempFocusH; focusMinutes = tempFocusM; focusSeconds = tempFocusS; breakHours = tempBreakH; breakMinutes = tempBreakM; breakSeconds = tempBreakS; totalRounds = tempRounds; _resetTimerLogic(true); }); Navigator.pop(context); }, style: ElevatedButton.styleFrom(backgroundColor: timerMode == 2 ? examColor.value : mainColor.value), child: const Text("SAVE", style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold))))
                   ])));
         });
   }
 
-  Widget _buildScrollWheel(int count, int initialItem, Function(int) onChanged,
-      {int offset = 0}) {
+  Widget _buildScrollWheel(int count, int initialItem, Function(int) onChanged, {int offset = 0}) {
     Color wheelColor = (timerMode == 2 ? examColor.value : mainColor.value);
-    return CupertinoPicker(scrollController: FixedExtentScrollController(
-        initialItem: initialItem - offset),
-        itemExtent: 32,
-        onSelectedItemChanged: (i) => onChanged(i + offset),
-        children: List.generate(count, (i) =>
-            Center(child: Text('${i + offset}'.padLeft(2, '0'),
-                style: TextStyle(color: wheelColor, fontSize: 20)))));
+    return CupertinoPicker(scrollController: FixedExtentScrollController(initialItem: initialItem - offset), itemExtent: 32, onSelectedItemChanged: (i) => onChanged(i + offset), children: List.generate(count, (i) => Center(child: Text('${i + offset}'.padLeft(2, '0'), style: TextStyle(color: wheelColor, fontSize: 20)))));
   }
 
   Widget _buildTypeBtn(String t, int modeIndex) {
     bool isActive = timerMode == modeIndex;
     Color activeColor = (modeIndex == 2 ? examColor.value : mainColor.value);
-    return GestureDetector(onTap: () {
-      playButtonFeedback();
-      _toggleSystemMode(modeIndex);
-    },
-        child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-            margin: EdgeInsets.zero,
-            decoration: BoxDecoration(
-                color: isActive ? activeColor : Colors.transparent,
-                borderRadius: BorderRadius.circular(30)),
-            child: Text(t, style: TextStyle(
-                color: isActive ? Colors.black : Colors.grey,
-                fontWeight: FontWeight.bold,
-                fontSize: 12))));
+    return GestureDetector(onTap: () { playButtonFeedback(); _toggleSystemMode(modeIndex); }, child: Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4), margin: EdgeInsets.zero, decoration: BoxDecoration(color: isActive ? activeColor : Colors.transparent, borderRadius: BorderRadius.circular(30)), child: Text(t, style: TextStyle(color: isActive ? Colors.black : Colors.grey, fontWeight: FontWeight.bold, fontSize: 12))));
   }
 
-  Widget _buildMiniToggleBtn(IconData icon, String label, bool isStudyBtn,
-      Color activeColor) {
+  Widget _buildMiniToggleBtn(IconData icon, String label, bool isStudyBtn, Color activeColor) {
     bool isActive = isStudyMode == isStudyBtn;
-    return GestureDetector(onTap: () {
-      playButtonFeedback();
-      _toggleStudyBreak(isStudyBtn);
-    },
-        child: Column(children: [
-          Container(padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                  color: isActive ? activeColor : Colors.grey[900],
-                  shape: BoxShape.circle,
-                  border: isActive ? BoxBorder.lerp(null, null, 0) : Border.all(
-                      color: Colors.grey.withOpacity(0.3))),
-              child: Icon(icon, color: isActive ? Colors.black : Colors.grey,
-                  size: 20)),
-          const SizedBox(height: 4),
-          Text(label, style: TextStyle(
-              color: isActive ? activeColor : Colors.grey,
-              fontSize: 10,
-              fontWeight: FontWeight.bold))
-        ]));
+    return GestureDetector(onTap: () { playButtonFeedback(); _toggleStudyBreak(isStudyBtn); }, child: Column(children: [Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: isActive ? activeColor : Colors.grey[900], shape: BoxShape.circle, border: isActive ? BoxBorder.lerp(null, null, 0) : Border.all(color: Colors.grey.withOpacity(0.3))), child: Icon(icon, color: isActive ? Colors.black : Colors.grey, size: 20)), const SizedBox(height: 4), Text(label, style: TextStyle(color: isActive ? activeColor : Colors.grey, fontSize: 10, fontWeight: FontWeight.bold))]));
   }
 
   Widget _buildLandscapeLayout(Color primaryColor, Color secondaryColor) {
     return Stack(children: [
-      Row(crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          // 👇 CHANGE 1: 'flex' ko 2 se badha kar 3 kar diya (Zyada Jagah mili)
-          Expanded(flex: 3,
-              child: Container(
-                alignment: Alignment.centerLeft, // Text ko Left side rakhenge
-                // 👇 CHANGE 2: Sirf Left side se 40 ka gap diya (Right se nahi)
-                padding: const EdgeInsets.only(left: 40.0),
-                child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: Text(_formatTime(), style: TextStyle(fontSize: 180, // Font size bhi thoda badha diya
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                        fontFamily: 'monospace',
-                        shadows: [
-                          Shadow(color: secondaryColor.withOpacity(0.5),
-                              blurRadius: 40)
-                        ]))),
-              )),
-
-          // Controls Section (Iska size waisa hi rahega)
-          Expanded(flex: 1,
-              child: Container(color: Colors.transparent,
-                  child: Column(mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
+      Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+          Expanded(flex: 3, child: Container(alignment: Alignment.centerLeft, padding: const EdgeInsets.only(left: 40.0), child: FittedBox(fit: BoxFit.scaleDown, child: Text(_formatTime(), style: TextStyle(fontSize: 180, fontWeight: FontWeight.bold, color: Colors.white, fontFamily: 'monospace', shadows: [Shadow(color: secondaryColor.withOpacity(0.5), blurRadius: 40)]))))),
+          Expanded(flex: 1, child: Container(color: Colors.transparent, child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
                         const SizedBox(height: 30),
-                        Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 10),
-                            child: Text(selectedSubject.toUpperCase(),
-                                textAlign: TextAlign.center,
-                                maxLines: 2,
-                                style: TextStyle(color: secondaryColor,
-                                    fontSize: 20,
-                                    fontWeight: FontWeight.bold,
-                                    letterSpacing: 1.5))),
+                        Padding(padding: const EdgeInsets.symmetric(horizontal: 10), child: Text(selectedSubject.toUpperCase(), textAlign: TextAlign.center, maxLines: 2, style: TextStyle(color: secondaryColor, fontSize: 20, fontWeight: FontWeight.bold, letterSpacing: 1.5))),
                         const SizedBox(height: 20),
-                        GestureDetector(onTap: () {
-                          playButtonFeedback();
-                          _startStopTimer();
-                        },
-                            child: Icon(isTimerRunning
-                                ? Icons.pause_circle_filled
-                                : Icons.play_circle_fill, color: secondaryColor,
-                                size: 75)),
+                        GestureDetector(onTap: () { playButtonFeedback(); _startStopTimer(); }, child: Icon(isTimerRunning ? Icons.pause_circle_filled : Icons.play_circle_fill, color: secondaryColor, size: 75)),
                         const SizedBox(height: 15),
-                        if (timerMode != 2) Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              _buildMiniToggleBtn(
-                                  Icons.school, "Study", true, primaryColor),
-                              const SizedBox(width: 20),
-                              _buildMiniToggleBtn(Icons.coffee, "Break", false,
-                                  breakColor.value)
-                            ]),
+                        if (timerMode != 2) Row(mainAxisAlignment: MainAxisAlignment.center, children: [_buildMiniToggleBtn(Icons.school, "Study", true, primaryColor), const SizedBox(width: 20), _buildMiniToggleBtn(Icons.coffee, "Break", false, breakColor.value)]),
                         const SizedBox(height: 10),
-                        IconButton(onPressed: () {
-                          _fullReset();
-                        },
-                            icon: const Icon(
-                                Icons.refresh, color: Colors.grey, size: 26),
-                            tooltip: "Reset")
+                        IconButton(onPressed: () { _fullReset(); }, icon: const Icon(Icons.refresh, color: Colors.grey, size: 26), tooltip: "Reset")
                       ])))
-        ],),
-
-      // Top Mode Selector Buttons
-      Positioned(top: 20,
-          left: 225, // Isko bhi thoda shift kiya taaki aligned lage
-          right: 150, // Right side se jagah chhodi taaki overlap na ho
-          child: Align(
-            alignment: Alignment.centerLeft, // Buttons ko bhi Left Align kiya
-            child: Container(padding: const EdgeInsets.all(4),
-                decoration: BoxDecoration(
-                    color: const Color(0xFF1E1E1E).withOpacity(0.8),
-                    borderRadius: BorderRadius.circular(30),
-                    border: Border.all(color: Colors.grey.withOpacity(0.3))),
-                child: Row(mainAxisSize: MainAxisSize.min,
-                    children: [
-                      _buildTypeBtn("STUDYWATCH", 0),
-                      _buildTypeBtn("POMODORO", 1),
-                      _buildTypeBtn("EXAM", 2)
-                    ])),
-          ))
+        ]),
+      Positioned(top: 20, left: 225, right: 150, child: Align(alignment: Alignment.centerLeft, child: Container(padding: const EdgeInsets.all(4), decoration: BoxDecoration(color: const Color(0xFF1E1E1E).withOpacity(0.8), borderRadius: BorderRadius.circular(30), border: Border.all(color: Colors.grey.withOpacity(0.3))), child: Row(mainAxisSize: MainAxisSize.min, children: [_buildTypeBtn("STUDYWATCH", 0), _buildTypeBtn("POMODORO", 1), _buildTypeBtn("EXAM", 2)]))))
     ]);
   }
 
   Widget _buildPortraitLayout(Color primaryColor, Color secondaryColor) {
     return Column(children: [
       const SizedBox(height: 20),
-      Container(padding: const EdgeInsets.all(4),
-          decoration: BoxDecoration(color: const Color(0xFF1E1E1E),
-              borderRadius: BorderRadius.circular(30),
-              border: Border.all(color: Colors.grey.withOpacity(0.3))),
-          child: Row(mainAxisSize: MainAxisSize.min,
-              children: [
-                _buildTypeBtn("STUDYWATCH", 0),
-                _buildTypeBtn("POMODORO", 1),
-                _buildTypeBtn("EXAM", 2)
-              ])),
+      Container(padding: const EdgeInsets.all(4), decoration: BoxDecoration(color: const Color(0xFF1E1E1E), borderRadius: BorderRadius.circular(30), border: Border.all(color: Colors.grey.withOpacity(0.3))), child: Row(mainAxisSize: MainAxisSize.min, children: [_buildTypeBtn("STUDYWATCH", 0), _buildTypeBtn("POMODORO", 1), _buildTypeBtn("EXAM", 2)])),
       const SizedBox(height: 20),
-      Row(mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            ChoiceChip(label: Text(
-                timerMode == 0 ? "STUDY" : (timerMode == 1 ? "FOCUS" : "EXAM")),
-                selected: isStudyMode,
-                selectedColor: primaryColor.withOpacity(0.2),
-                labelStyle: TextStyle(
-                    color: isStudyMode ? primaryColor : Colors.grey),
-                onSelected: (v) => _toggleStudyBreak(true)),
-            if (timerMode != 2) ...[
-              const SizedBox(width: 15),
-              ChoiceChip(label: Text(timerMode == 0 ? "NOT STUDY" : "BREAK"),
-                  selected: !isStudyMode,
-                  selectedColor: breakColor.value.withOpacity(0.2),
-                  labelStyle: TextStyle(
-                      color: !isStudyMode ? breakColor.value : Colors.grey),
-                  onSelected: (v) => _toggleStudyBreak(false))
-            ]
+      Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+            ChoiceChip(label: Text(timerMode == 0 ? "STUDY" : (timerMode == 1 ? "FOCUS" : "EXAM")), selected: isStudyMode, selectedColor: primaryColor.withOpacity(0.2), labelStyle: TextStyle(color: isStudyMode ? primaryColor : Colors.grey), onSelected: (v) => _toggleStudyBreak(true)),
+            if (timerMode != 2) ...[const SizedBox(width: 15), ChoiceChip(label: Text(timerMode == 0 ? "NOT STUDY" : "BREAK"), selected: !isStudyMode, selectedColor: breakColor.value.withOpacity(0.2), labelStyle: TextStyle(color: !isStudyMode ? breakColor.value : Colors.grey), onSelected: (v) => _toggleStudyBreak(false))]
           ]),
       const SizedBox(height: 20),
-      Container(
-          padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 5),
-          decoration: BoxDecoration(color: const Color(0xFF1E1E1E),
-              borderRadius: BorderRadius.circular(30),
-              border: Border.all(color: secondaryColor.withOpacity(0.5))),
-          child: Row(mainAxisSize: MainAxisSize.min,
-              children: [
-                DropdownButtonHideUnderline(child: DropdownButton<String>(
-                    value: (studySubjects.contains(selectedSubject) ||
-                        breakActivities.contains(selectedSubject))
-                        ? selectedSubject
-                        : null,
-                    dropdownColor: const Color(0xFF2C2C2C),
-                    icon: Icon(Icons.arrow_drop_down, color: secondaryColor),
-                    style: TextStyle(
-                        color: subjectColors.containsKey(selectedSubject)
-                            ? Color(subjectColors[selectedSubject]!)
-                            : Colors.white,
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold),
-                    hint: const Text(
-                        "Select...", style: TextStyle(color: Colors.grey)),
-                    onChanged: (String? newValue) {
-                      if (newValue != null) {
-                        setState(() {
-                          selectedSubject = newValue;
-                          if (isStudyMode)
-                            lastStudySubject = newValue;
-                          else
-                            lastBreakActivity = newValue;
-                        });
-                      }
-                    },
-                    items: (isStudyMode ? studySubjects : breakActivities).map<
-                        DropdownMenuItem<String>>((String v) {
-                      Color txtColor = subjectColors.containsKey(v) ? Color(
-                          subjectColors[v]!) : Colors.white;
-                      return DropdownMenuItem(
-                          value: v, child: Text(v, style: TextStyle(
-                          color: txtColor, fontWeight: FontWeight.bold)));
-                    }).toList())),
-                const SizedBox(width: 5),
-                InkWell(onTap: _addSubject,
-                    child: Icon(Icons.add_circle, color: secondaryColor)),
-                const SizedBox(width: 10),
-                InkWell(onTap: _manageSubjects,
-                    child: const Icon(Icons.list, color: Colors.grey))
+      Container(padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 5), decoration: BoxDecoration(color: const Color(0xFF1E1E1E), borderRadius: BorderRadius.circular(30), border: Border.all(color: secondaryColor.withOpacity(0.5))), child: Row(mainAxisSize: MainAxisSize.min, children: [
+                DropdownButtonHideUnderline(child: DropdownButton<String>(value: (studySubjects.contains(selectedSubject) || breakActivities.contains(selectedSubject)) ? selectedSubject : null, dropdownColor: const Color(0xFF2C2C2C), icon: Icon(Icons.arrow_drop_down, color: secondaryColor), style: TextStyle(color: subjectColors.containsKey(selectedSubject) ? Color(subjectColors[selectedSubject]!) : Colors.white, fontSize: 18, fontWeight: FontWeight.bold), hint: const Text("Select...", style: TextStyle(color: Colors.grey)), onChanged: (String? newValue) { if (newValue != null) { setState(() { selectedSubject = newValue; if (isStudyMode) lastStudySubject = newValue; else lastBreakActivity = newValue; }); } }, items: (isStudyMode ? studySubjects : breakActivities).map<DropdownMenuItem<String>>((String v) { Color txtColor = subjectColors.containsKey(v) ? Color(subjectColors[v]!) : Colors.white; return DropdownMenuItem(value: v, child: Text(v, style: TextStyle(color: txtColor, fontWeight: FontWeight.bold))); }).toList())),
+                const SizedBox(width: 5), InkWell(onTap: _addSubject, child: Icon(Icons.add_circle, color: secondaryColor)), const SizedBox(width: 10), InkWell(onTap: _manageSubjects, child: const Icon(Icons.list, color: Colors.grey))
               ])),
       const Spacer(),
-// 👇 FIX: Padding add ki
-      Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 5.0), // Left-Right se gap
-        child: FittedBox(fit: BoxFit.scaleDown,
-            child: Text(_formatTime(), style: TextStyle(fontSize: 100,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
-                fontFamily: 'monospace',
-                shadows: [
-                  Shadow(color: secondaryColor.withOpacity(0.5), blurRadius: 20)
-                ]))),
-      ),
-      if (timerMode == 1) Padding(padding: const EdgeInsets.only(top: 10),
-          child: Text("ROUND $currentRound / $totalRounds",
-              style: const TextStyle(
-                  color: Colors.grey, fontSize: 18, letterSpacing: 1.5))),
+      Padding(padding: const EdgeInsets.symmetric(horizontal: 5.0), child: FittedBox(fit: BoxFit.scaleDown, child: Text(_formatTime(), style: TextStyle(fontSize: 100, fontWeight: FontWeight.bold, color: Colors.white, fontFamily: 'monospace', shadows: [Shadow(color: secondaryColor.withOpacity(0.5), blurRadius: 20)])))),
+      if (timerMode == 1) Padding(padding: const EdgeInsets.only(top: 10), child: Text("ROUND $currentRound / $totalRounds", style: const TextStyle(color: Colors.grey, fontSize: 18, letterSpacing: 1.5))),
       const Spacer(),
-      Row(mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            IconButton(onPressed: () {
-              _fullReset();
-            }, icon: const Icon(Icons.refresh, color: Colors.grey, size: 40)),
-            const SizedBox(width: 30),
-            GestureDetector(onTap: () {
-              playButtonFeedback();
-              _startStopTimer();
-            },
-                child: Container(height: 90,
-                    width: 90,
-                    decoration: BoxDecoration(color: secondaryColor,
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(color: secondaryColor.withOpacity(0.5),
-                              blurRadius: 20)
-                        ]),
-                    child: Icon(isTimerRunning ? Icons.pause : Icons.play_arrow,
-                        color: Colors.black, size: 50))),
-            const SizedBox(width: 70)
-          ]),
+      Row(mainAxisAlignment: MainAxisAlignment.center, children: [IconButton(onPressed: () { _fullReset(); }, icon: const Icon(Icons.refresh, color: Colors.grey, size: 40)), const SizedBox(width: 30), GestureDetector(onTap: () { playButtonFeedback(); _startStopTimer(); }, child: Container(height: 90, width: 90, decoration: BoxDecoration(color: secondaryColor, shape: BoxShape.circle, boxShadow: [BoxShadow(color: secondaryColor.withOpacity(0.5), blurRadius: 20)]), child: Icon(isTimerRunning ? Icons.pause : Icons.play_arrow, color: Colors.black, size: 50))), const SizedBox(width: 70)]),
       const SizedBox(height: 50)
     ]);
   }
 
-  // 👇 FIX: Custom Message Support
   void _showCompletionDialog({String? customTitle, String? customMsg}) {
     showDialog(context: context, builder: (context) {
-      return AlertDialog(
-          backgroundColor: const Color(0xFF1E1E1E),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15),
-              side: BorderSide(color: mainColor.value, width: 2)),
-
-          title: Row(children: [
-            Icon(Icons.emoji_events, color: mainColor.value),
-            const SizedBox(width: 10),
-            Expanded(child: Text(customTitle ?? "Done!", style: TextStyle(
-                color: mainColor.value,
-                fontWeight: FontWeight.bold,
-                fontSize: 18)))
-          ]),
-
-          content: Text(customMsg ?? "Target Achieved! Data saved.",
-              style: const TextStyle(color: Colors.white70)),
-
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(context),
-                child: const Text(
-                    "CLOSE", style: TextStyle(color: Colors.grey))),
-
-            if(customTitle == null) // Sirf timer khatam hone par Restart dikhao
-              ElevatedButton(
-                  onPressed: () {
-                    Navigator.pop(context);
-                    _handleResume();
-                  },
-                  style: ElevatedButton.styleFrom(
-                      backgroundColor: mainColor.value),
-                  child: const Text("RESTART", style: TextStyle(
-                      color: Colors.black, fontWeight: FontWeight.bold))
-              )
-          ]
-      );
+      return AlertDialog(backgroundColor: const Color(0xFF1E1E1E), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15), side: BorderSide(color: mainColor.value, width: 2)), title: Row(children: [Icon(Icons.emoji_events, color: mainColor.value), const SizedBox(width: 10), Expanded(child: Text(customTitle ?? "Done!", style: TextStyle(color: mainColor.value, fontWeight: FontWeight.bold, fontSize: 18)))]), content: Text(customMsg ?? "Target Achieved! Data saved.", style: const TextStyle(color: Colors.white70)), actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text("CLOSE", style: TextStyle(color: Colors.grey))), if(customTitle == null) ElevatedButton(onPressed: () { Navigator.pop(context); _handleResume(); }, style: ElevatedButton.styleFrom(backgroundColor: mainColor.value), child: const Text("RESTART", style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)))]);
     });
   }
 }
-
 // ================== 3. STATISTICS SCREEN ==================
 class StatisticsScreen extends StatefulWidget { const StatisticsScreen({super.key}); @override State<StatisticsScreen> createState() => _StatisticsScreenState(); }
 class _StatisticsScreenState extends State<StatisticsScreen> {
@@ -1769,78 +1345,24 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
   Widget _buildCompareChartContent(double val1, double val2, double maxY, String label1, String label2) { Widget getCompareLabel(double value, TitleMeta meta) { String text = ""; if (value.toInt() == 0) text = label1; else if (value.toInt() == 1) text = label2; else return const Text(""); if (text.contains(" ")) text = text.replaceAll(" ", "\n"); return SideTitleWidget(axisSide: meta.axisSide, space: 4, child: Text(text, textAlign: TextAlign.center, style: TextStyle(color: value.toInt() == 0 ? mainColor.value : breakColor.value, fontSize: 10, fontWeight: FontWeight.bold))); } if (compareChartType == "Pie") { if (val1 == 0 && val2 == 0) return const Center(child: Text("Select dates to compare", style: TextStyle(color: Colors.grey))); return PieChart(PieChartData(sectionsSpace: 4, centerSpaceRadius: 40, sections: [PieChartSectionData(color: mainColor.value, value: val1 == 0 ? 0.1 : val1, title: "${val1.toStringAsFixed(1)}\n$timeUnit", radius: 50, titleStyle: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.black)), PieChartSectionData(color: breakColor.value, value: val2 == 0 ? 0.1 : val2, title: "${val2.toStringAsFixed(1)}\n$timeUnit", radius: 50, titleStyle: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.black))])); } if (compareChartType == "Line") { return LineChart(LineChartData(gridData: FlGridData(show: true, drawVerticalLine: false, getDrawingHorizontalLine: (v) => const FlLine(color: Colors.white10, strokeWidth: 1)), titlesData: FlTitlesData(leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 40, getTitlesWidget: (v, m) => Text(_formatYAxis(v), style: const TextStyle(color: Colors.grey, fontSize: 10)))), bottomTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 40, getTitlesWidget: getCompareLabel)), topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)), rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false))), borderData: FlBorderData(show: false), minY: 0, maxY: maxY, lineBarsData: [LineChartBarData(spots: [FlSpot(0, val1), FlSpot(1, val2)], isCurved: false, color: Colors.white, barWidth: 2, dotData: FlDotData(show: true, getDotPainter: (spot, percent, barData, index) { return FlDotCirclePainter(radius: 6, color: index == 0 ? mainColor.value : breakColor.value, strokeWidth: 0); }))])); } return BarChart(BarChartData(gridData: FlGridData(show: false), titlesData: FlTitlesData(leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 40, getTitlesWidget: (v, m) => Text(_formatYAxis(v), style: const TextStyle(color: Colors.grey, fontSize: 10)))), rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)), topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)), bottomTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 40, getTitlesWidget: getCompareLabel))), borderData: FlBorderData(show: false), barGroups: [BarChartGroupData(x: 0, barRods: [BarChartRodData(toY: val1, color: mainColor.value, width: 40, borderRadius: BorderRadius.circular(4), backDrawRodData: BackgroundBarChartRodData(show: true, toY: maxY, color: Colors.grey[900]))]), BarChartGroupData(x: 1, barRods: [BarChartRodData(toY: val2, color: breakColor.value, width: 40, borderRadius: BorderRadius.circular(4), backDrawRodData: BackgroundBarChartRodData(show: true, toY: maxY, color: Colors.grey[900]))])])); }
 }
 
-// ================== 4. SETTINGS SCREEN (UPDATED) ==================
+// ================== 4. SETTINGS SCREEN (FINAL FIXED) ==================
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
 }
+
 class _SettingsScreenState extends State<SettingsScreen> {
-  // MethodChannel define (Android Native Bridge ke liye)
   static const platform = MethodChannel('com.example.time_app/settings');
 
-  // --- DONATION LOGIC START ---
-Future<void> _payWithUPI(String amount) async {
-    const String upiId = "saqibqamar7866@okicici"; 
-    
-    // 👇 FIX: Sirf Amount set karo (Example: 10.00)
-    String formattedAmount = "$amount.00";
-
-    // 👇 MAGIC URL: Maine 'pn' (Name) hata diya hai. 
-    // Ab GPay/PhonePe khud tumhara naam bank se check karega.
-    final Uri upiUrl = Uri.parse(
-        "upi://pay?pa=$upiId&am=$formattedAmount&cu=INR"
-    );
-
-    try {
-      // Launch Mode ko 'externalNonBrowserApplication' karo (Best for UPI)
-      if (!await launchUrl(upiUrl, mode: LaunchMode.externalNonBrowserApplication)) {
-        if (mounted) {
-          // 👇 Agar app na khule, to ID copy karwa do (Backup Plan)
-          Clipboard.setData(const ClipboardData(text: upiId));
-          ScaffoldMessenger.of(context).showSnackBar(
-             const SnackBar(content: Text("UPI App not found. ID Copied to Clipboard!"), backgroundColor: Colors.orange),
-          );
-        }
-      }
-    } catch (e) {
-      print("UPI Error: $e");
-      // Error aane par bhi user ki help ke liye ID copy karwa do
-      Clipboard.setData(const ClipboardData(text: upiId));
-      if(mounted){
-        ScaffoldMessenger.of(context).showSnackBar(
-             const SnackBar(content: Text("Error opening app. UPI ID Copied!"), backgroundColor: Colors.red),
-        );
-      }
-    }
-  }
-  Widget _buildDonationBox(String amount) {
-    return Expanded(
-      child: GestureDetector(
-        onTap: () => _payWithUPI(amount), // Button dabte hi wo amount jayega
-        child: Container(
-          margin: const EdgeInsets.symmetric(horizontal: 4),
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          decoration: BoxDecoration(
-            color: Colors.green[700],
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: Colors.white24),
-          ),
-          alignment: Alignment.center,
-          child: Text("₹$amount", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-        ),
-      ),
-    );
-  }
+  // --- DONATION LOGIC (ONLY BUY ME A COFFEE) ---
   Future<void> _openBuyMeCoffee() async {
-    // 👇 YAHAN APNA LINK DALEIN 👇
     final Uri url = Uri.parse('https://buymeacoffee.com/saqib791');
     if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
       debugPrint("Browser not open");
     }
   }
-  // --- DONATION LOGIC END ---
 
   void _openColorPicker(String title, ValueNotifier<Color> colorNotifier, String prefKey) {
     Color tempColor = colorNotifier.value;
@@ -1877,13 +1399,8 @@ Future<void> _payWithUPI(String amount) async {
     );
   }
 
-  // ... (Baaki functions same rahenge: _exportData, _importData, _clearAllData) ...
-  // Jagah bachane ke liye main unhe repeat nahi kar raha hu, wo waise hi rahenge
-  // jaise aapke purane code mein the. Agar wo functions chahiye to bata dena.
-  // Main yahan direct export/import functions copy kar raha hu taaki error na aaye:
-
+  // --- DATA MANAGEMENT FUNCTIONS ---
   Future<void> _exportData() async {
-    // Aapka purana export logic yahan same rahega
     try {
       bool storageGranted = await Permission.manageExternalStorage.request().isGranted || await Permission.storage.request().isGranted;
       if (!storageGranted) { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Storage Permission Required!"), backgroundColor: Colors.red)); return; }
@@ -1911,7 +1428,6 @@ Future<void> _payWithUPI(String amount) async {
   }
 
   Future<void> _importData() async {
-    // Aapka purana import logic yahan same rahega
     try {
       bool storageGranted = await Permission.manageExternalStorage.request().isGranted || await Permission.storage.request().isGranted;
       if (!storageGranted) { ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Permission Denied!"), backgroundColor: Colors.red)); return; }
@@ -1938,7 +1454,6 @@ Future<void> _payWithUPI(String amount) async {
   }
 
   Future<void> _clearAllData() async {
-    // Aapka purana clear logic yahan same rahega
     showDialog(context: context, builder: (context) => AlertDialog(backgroundColor: const Color(0xFF1E1E1E), title: const Text("⚠️ Reset Everything?", style: TextStyle(color: Colors.redAccent)), content: const Text("This will delete all data.", style: TextStyle(color: Colors.white70)), actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text("CANCEL", style: TextStyle(color: Colors.grey))), ElevatedButton(onPressed: () async { final prefs = await SharedPreferences.getInstance(); await prefs.clear(); setState(() { mainColor.value = Colors.cyanAccent; breakColor.value = Colors.pinkAccent; examColor.value = Colors.greenAccent; }); if (context.mounted) Navigator.pop(context); if (context.mounted) { Navigator.of(context).pushAndRemoveUntil(MaterialPageRoute(builder: (context) => const MyApp()), (Route<dynamic> route) => false); } }, style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent), child: const Text("RESET ALL", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold))) ]));
   }
 
@@ -1956,7 +1471,7 @@ Future<void> _payWithUPI(String amount) async {
         padding: const EdgeInsets.all(20),
         children: [
           // ==========================================
-          // 👇 NEW DONATION SECTION (SABSE UPAR) 👇
+          // 👇 DONATION SECTION (ONLY BUY ME A COFFEE)
           // ==========================================
           Container(
             padding: const EdgeInsets.all(16),
@@ -1972,31 +1487,17 @@ Future<void> _payWithUPI(String amount) async {
                 const SizedBox(height: 5),
                 const Text("If you like this time management app, please consider donating.", style: TextStyle(color: Colors.grey, fontSize: 12)),
                 const SizedBox(height: 15),
-
-                const Text("Select Amount (UPI):", style: TextStyle(color: Colors.grey, fontSize: 12)),
-                const SizedBox(height: 10),
-
-                Row(
-                  children: [
-                    _buildDonationBox("10"),
-                    _buildDonationBox("20"),
-                    _buildDonationBox("50"),
-                    _buildDonationBox("100"),
-                  ],
-                ),
-                const SizedBox(height: 10),
-
-                // Button 2: Buy Me a Coffee
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton.icon(
                     onPressed: _openBuyMeCoffee,
                     icon: const Icon(Icons.coffee, color: Colors.black),
-                    label: const Text("Buy me a Coffee (International)"),
+                    label: const Text("Buy me a Coffee"),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: const Color(0xFFFFDD00),
                       foregroundColor: Colors.black,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
                     ),
                   ),
                 ),
@@ -2004,7 +1505,6 @@ Future<void> _payWithUPI(String amount) async {
             ),
           ),
           const SizedBox(height: 25),
-          // ==========================================
 
           const Text("THEME COLORS", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
           const SizedBox(height: 15),
@@ -2099,7 +1599,7 @@ Future<void> _payWithUPI(String amount) async {
           const Divider(color: Colors.grey),
           const SizedBox(height: 15),
 
-          // 👇 TIMER BEHAVIOR (Isse wapas add karein)
+          // 👇 TIMER BEHAVIOR
           const Text("TIMER BEHAVIOR", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
           const SizedBox(height: 15),
 
@@ -2108,12 +1608,7 @@ Future<void> _payWithUPI(String amount) async {
             builder: (context, val, child) {
               return SwitchListTile(
                 title: const Text("Always Start from 0", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                subtitle: Text(
-                    val
-                        ? "Timer resets to 00:00 when you switch modes."
-                        : "Timer continues today's total time on switch.",
-                    style: const TextStyle(color: Colors.grey, fontSize: 12)
-                ),
+                subtitle: Text(val ? "Timer resets to 00:00 when you switch modes." : "Timer continues today's total time on switch.", style: const TextStyle(color: Colors.grey, fontSize: 12)),
                 activeColor: mainColor.value,
                 value: val,
                 onChanged: (newValue) async {
@@ -2122,6 +1617,34 @@ Future<void> _payWithUPI(String amount) async {
                   await prefs.setBool('reset_timer_switch', newValue);
                 },
                 secondary: Icon(Icons.restart_alt, color: mainColor.value),
+                tileColor: const Color(0xFF111111),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15), side: BorderSide(color: mainColor.value.withOpacity(0.3))),
+              );
+            },
+          ),
+
+          const SizedBox(height: 15),
+
+          // 👇 NEW: Auto-Start Timer Switch (Jo Missing tha)
+          ValueListenableBuilder<bool>(
+            valueListenable: autoStartOnSwitch,
+            builder: (context, val, child) {
+              return SwitchListTile(
+                title: const Text("Auto-Start Timer", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                subtitle: Text(
+                    val
+                        ? "Timer starts automatically when you switch modes."
+                        : "Timer stays PAUSED when you switch modes.",
+                    style: const TextStyle(color: Colors.grey, fontSize: 12)
+                ),
+                activeColor: mainColor.value,
+                value: val,
+                onChanged: (newValue) async {
+                  autoStartOnSwitch.value = newValue;
+                  final prefs = await SharedPreferences.getInstance();
+                  await prefs.setBool('auto_start_switch', newValue);
+                },
+                secondary: Icon(Icons.play_circle_filled, color: mainColor.value),
                 tileColor: const Color(0xFF111111),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15), side: BorderSide(color: mainColor.value.withOpacity(0.3))),
               );
@@ -2137,18 +1660,15 @@ Future<void> _payWithUPI(String amount) async {
           _buildSettingsTile(icon: Icons.upload_file, title: "Backup Data", subtitle: "Save to folder", color: Colors.greenAccent, onTap: _exportData),
           const SizedBox(height: 10),
           _buildSettingsTile(icon: Icons.download_for_offline, title: "Restore Data", subtitle: "Load from backup file", color: Colors.cyanAccent, onTap: _importData),
-          // ... Backup aur Restore ke neeche ye paste karein ...
 
           const SizedBox(height: 10),
 
-          // 👇 UPDATED CHANGE FOLDER (NO RESTART)
           _buildSettingsTile(
             icon: Icons.folder_open,
             title: "Change Folder",
             subtitle: "Current data will be saved to new folder",
             color: Colors.orangeAccent,
             onTap: () async {
-              // 1. Pehle Permission Check karein
               bool hasPermission = false;
               if (await Permission.manageExternalStorage.request().isGranted) {
                 hasPermission = true;
@@ -2157,38 +1677,26 @@ Future<void> _payWithUPI(String amount) async {
               }
 
               if (!hasPermission) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text("Permission Required!"), backgroundColor: Colors.red)
-                );
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Permission Required!"), backgroundColor: Colors.red));
                 return;
               }
 
-              // 2. Folder Picker Kholein
               String? selectedDirectory = await FilePicker.platform.getDirectoryPath();
 
               if (selectedDirectory != null) {
                 final prefs = await SharedPreferences.getInstance();
-
-                // 3. Naya Path Save karein
                 await prefs.setString('backup_path', selectedDirectory);
-
-                // 4. Turant naye folder mein ek baar data save kar dein
-                // (Taaki wahan 'time_manager_data.json' file ban jaye)
                 await updateJsonFile();
 
                 if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text("Folder Changed to: ${selectedDirectory.split('/').last} "),
-                        backgroundColor: Colors.green,
-                      )
+                      SnackBar(content: Text("Folder Changed to: ${selectedDirectory.split('/').last} "), backgroundColor: Colors.green)
                   );
                 }
               }
             },
           ),
 
-          // ... Iske baad Reset Everything wala button hoga ...
           const SizedBox(height: 40),
           _buildSettingsTile(icon: Icons.delete_forever, title: "Reset Everything", subtitle: "Delete all data", color: Colors.redAccent, onTap: _clearAllData)
         ],
