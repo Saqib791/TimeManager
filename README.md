@@ -6,10 +6,10 @@
   
   **Master Your Time, Master Your Life.**
   
-  [![Flutter](https://img.shields.io/badge/Made%20with-Flutter-02569B?style=for-the-badge&logo=flutter)](https://flutter.dev/)
-  [![Platform](https://img.shields.io/badge/Platform-Android-3DDC84?style=for-the-badge&logo=android)](https://www.android.com/)
- [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
-  [![F-Droid](https://img.shields.io/badge/F--Droid-Pending-3DDC84?style=for-the-badge&logo=f-droid)](https://f-droid.org/)
+[![Flutter](https://img.shields.io/badge/Made%20with-Flutter-02569B?style=for-the-badge&logo=flutter)](https://flutter.dev/)
+[![Platform](https://img.shields.io/badge/Platform-Android-3DDC84?style=for-the-badge&logo=android)](https://www.android.com/)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg?style=for-the-badge)](https://www.gnu.org/licenses/gpl-3.0)
+[![F-Droid](https://img.shields.io/badge/F--Droid-Pending-3DDC84?style=for-the-badge&logo=f-droid)](https://f-droid.org/)
 
   <p>
     <a href="#-features">Features</a> •
