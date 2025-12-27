@@ -111,14 +111,15 @@ Push to the Branch (git push origin feature/NewFeature)
 
 Open a Pull Request
 
-❤️ Support
+<h2 id="-support">❤️ Support</h2>
 If you find this app helpful, you can support the development!
 
-<a href="https://buymeacoffee.com/saqib791">
+<a href="https://buymeacoffee.com/saqibqamar">
   <img src="https://img.shields.io/badge/Buy%20Me%20a%20Coffee-ffdd00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black" alt="Buy Me A Coffee" />
 </a>
 
-UPI ID: saqibqamar7866@okicici
+<br>
+<b>UPI ID:</b> saqibqamar7866@okicici
 
 ## 📄 License
 
