@@ -1786,8 +1786,7 @@ Future<void> _payWithUPI(String amount) async {
     
     // 👇 FIX: Sirf Amount set karo (Example: 10.00)
     String formattedAmount = "$amount.00";
-
-    // 👇 MAGIC URL: Maine 'pn' (Name) hata diya hai. 
+  
     // Ab GPay/PhonePe khud tumhara naam bank se check karega.
     final Uri upiUrl = Uri.parse(
         "upi://pay?pa=$upiId&am=$formattedAmount&cu=INR"
