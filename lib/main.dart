@@ -1781,31 +1781,38 @@ class _SettingsScreenState extends State<SettingsScreen> {
   static const platform = MethodChannel('com.example.time_app/settings');
 
   // --- DONATION LOGIC START ---
- Future<void> _payWithUPI(String amount) async {
+Future<void> _payWithUPI(String amount) async {
     const String upiId = "saqibqamar7866@okicici"; 
-    const String name = "Time Manager Dev";
-    // const String note = "Donation"; // Note bhi hata diya safety ke liye
-
-    // Format amount to 2 decimal places (Ex: 10.00)
+    
+    // 👇 FIX: Sirf Amount set karo (Example: 10.00)
     String formattedAmount = "$amount.00";
 
-    // 👇 CHANGE: 'tr' aur 'tn' hata diya. Simple P2P transfer banaya.
+    // 👇 MAGIC URL: Maine 'pn' (Name) hata diya hai. 
+    // Ab GPay/PhonePe khud tumhara naam bank se check karega.
     final Uri upiUrl = Uri.parse(
-        "upi://pay?pa=$upiId&pn=$name&am=$formattedAmount&cu=INR&mode=00"
+        "upi://pay?pa=$upiId&am=$formattedAmount&cu=INR"
     );
-    
-    // mode=00 ka matlab hota hai default/payer initiated payment.
 
     try {
-      if (!await launchUrl(upiUrl, mode: LaunchMode.externalApplication)) {
+      // Launch Mode ko 'externalNonBrowserApplication' karo (Best for UPI)
+      if (!await launchUrl(upiUrl, mode: LaunchMode.externalNonBrowserApplication)) {
         if (mounted) {
+          // 👇 Agar app na khule, to ID copy karwa do (Backup Plan)
+          Clipboard.setData(const ClipboardData(text: upiId));
           ScaffoldMessenger.of(context).showSnackBar(
-             const SnackBar(content: Text("No UPI App found!"), backgroundColor: Colors.red),
+             const SnackBar(content: Text("UPI App not found. ID Copied to Clipboard!"), backgroundColor: Colors.orange),
           );
         }
       }
     } catch (e) {
       print("UPI Error: $e");
+      // Error aane par bhi user ki help ke liye ID copy karwa do
+      Clipboard.setData(const ClipboardData(text: upiId));
+      if(mounted){
+        ScaffoldMessenger.of(context).showSnackBar(
+             const SnackBar(content: Text("Error opening app. UPI ID Copied!"), backgroundColor: Colors.red),
+        );
+      }
     }
   }
   Widget _buildDonationBox(String amount) {
