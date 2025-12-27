@@ -59,7 +59,6 @@ Built with ❤️ using Flutter, it is optimized to run smoothly in the backgrou
 |:---:|:---:|:---:|:---:|
 | <img src="screenshots/home.png" width="200"> | <img src="screenshots/timer.png" width="200"> | <img src="screenshots/stats.png" width="200"> | <img src="screenshots/settings.png" width="200"> |
 
-*(Note: Upload images to a 'screenshots' folder in your repo to see them here)*
 
 ---
 
@@ -99,17 +98,28 @@ flutter run
 
 
 ## 🤝 Contributing
-Contributions are welcome! If you have an idea or found a bug, feel free to open an issue or submit a pull request.
 
-Fork the Project
+Contributions are always welcome! If you have an idea that would make this better, please fork the repo and create a pull request. You can also simply open an issue with the tag "enhancement".
 
-Create your Feature Branch (git checkout -b feature/NewFeature)
+1. **Fork the Project**
+2. **Create your Feature Branch**
+```javascript
+git checkout -b feature/AmazingFeature
+```
 
-Commit your Changes (git commit -m 'Add some NewFeature')
+3.**Commit your Changes**
 
-Push to the Branch (git push origin feature/NewFeature)
+  ```javascript
+git commit -m 'Add some AmazingFeature'
+```
 
-Open a Pull Request
+
+4.**Push to the Branch**
+```javascript
+git push origin feature/AmazingFeature
+```
+5.**Open a Pull Request**
+
 
 <h2 id="-support">❤️ Support</h2>
 
