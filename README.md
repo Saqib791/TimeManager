@@ -80,24 +80,23 @@ If you want to build this app from source:
 1. **Clone the repository:**
    ```bash
    git clone [https://github.com/Saqib791/TimeManager.git](https://github.com/Saqib791/TimeManager.git)
-2. **Navigate to the project folder:
+2. **Navigate to the project folder:**
 
+```javascript
 cd TimeManager
+```
 3. **Install dependencies:
 
+```javascript
 flutter pub get
+```
 3. **Run the app:
 
+```javascript
 flutter run
-cd TimeManager
 
-3. **Install dependencies:
+```
 
-flutter pub get
-
-3. **Run the app:
-
-flutter run
 
 ## 🤝 Contributing
 Contributions are welcome! If you have an idea or found a bug, feel free to open an issue or submit a pull request.
