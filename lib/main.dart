@@ -2160,6 +2160,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  // State class ke shuru mein add karo
+String? currentBackupPath; 
+
+@override
+void initState() {
+  super.initState();
+  _loadBackupPath(); // App khulte hi path load karega
+}
+
+Future<void> _loadBackupPath() async {
+  final prefs = await SharedPreferences.getInstance();
+  setState(() {
+    currentBackupPath = prefs.getString('backup_path') ?? "Not set (Default Storage)";
+  });
+}
+
   // --- DATA MANAGEMENT FUNCTIONS ---
   Future<void> _exportData() async {
     try {
@@ -2440,35 +2456,45 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
           const SizedBox(height: 10),
 
-          _buildSettingsTile(
+         _buildSettingsTile(
             icon: Icons.folder_open,
             title: "Change Folder",
-            subtitle: "Current data will be saved to new folder",
+            // 👇 FIX: Ab yahan current path dikhega
+            subtitle: currentBackupPath != null 
+                ? "Location: ...${currentBackupPath!.split('/').last}" // Sirf last folder ka naam dikhayega taaki gandagi na ho
+                : "Select folder to save data",
             color: Colors.orangeAccent,
             onTap: () async {
-              bool hasPermission = false;
-              if (await Permission.manageExternalStorage.request().isGranted) {
-                hasPermission = true;
-              } else if (await Permission.storage.request().isGranted) {
-                hasPermission = true;
-              }
+              // 1. Permission Check (Android 11+ ke liye manage storage zaroori hai)
+              if (await Permission.manageExternalStorage.request().isGranted || 
+                  await Permission.storage.request().isGranted) {
+                
+                // 2. Folder Picker Open Karo
+                String? selectedDirectory = await FilePicker.platform.getDirectoryPath();
 
-              if (!hasPermission) {
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Permission Required!"), backgroundColor: Colors.red));
-                return;
-              }
+                if (selectedDirectory != null) {
+                  final prefs = await SharedPreferences.getInstance();
+                  await prefs.setString('backup_path', selectedDirectory);
+                  
+                  // 👇 UI Update Karo
+                  setState(() {
+                    currentBackupPath = selectedDirectory;
+                  });
 
-              String? selectedDirectory = await FilePicker.platform.getDirectoryPath();
+                  await updateJsonFile(); // Turant backup save karo
 
-              if (selectedDirectory != null) {
-                final prefs = await SharedPreferences.getInstance();
-                await prefs.setString('backup_path', selectedDirectory);
-                await updateJsonFile();
-
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text("Saved to: ${selectedDirectory.split('/').last}"), backgroundColor: Colors.green)
+                    );
+                  }
+                }
+              } else {
                 if (mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text("Folder Changed to: ${selectedDirectory.split('/').last} "), backgroundColor: Colors.green)
+                    const SnackBar(content: Text("Permission Required! Please allow in Settings."), backgroundColor: Colors.red)
                   );
+                  openAppSettings(); // User ko settings me bhej do agar permission nahi di
                 }
               }
             },
@@ -2620,7 +2646,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
 Widget _buildFontTile(String title, String subtitle, ValueNotifier<String?> notifier, String prefKey) {
     return Container(
-      // ❌ Old: height: 70, (Hata diya)
       // ✅ New: Padding use kiya taaki content kate nahi
       padding: const EdgeInsets.symmetric(vertical: 5),
       decoration: BoxDecoration(
