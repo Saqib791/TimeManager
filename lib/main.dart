@@ -40,6 +40,38 @@ ValueNotifier<String> soundAlarm = ValueNotifier("alarm.mp3");
 ValueNotifier<String> soundBreak = ValueNotifier("bell.mp3");
 ValueNotifier<String> soundDone = ValueNotifier("success.mp3");
 
+// === NEW GLOBAL VARIABLES FOR FONTS ===
+ValueNotifier<String?> appFont = ValueNotifier(null);   // Pure App ka Font (Null = Default)
+ValueNotifier<String?> timerFont = ValueNotifier(null); // Sirf Timer ka Font
+List<String> availableFonts = ["Default"]; // Default option hamesha rahega
+
+// 👇 NEW: Font Loader Function (Isse App start hote hi fonts load honge)
+Future<void> loadAssetFonts() async {
+  try {
+    final assetManifest = await AssetManifest.loadFromAssetBundle(rootBundle);
+    final List<String> assets = assetManifest.listAssets();
+    
+    // Sirf 'assets/fonts/' wale files dhundo
+    final fontPaths = assets.where((key) => key.contains('assets/fonts/') && (key.endsWith('.ttf') || key.endsWith('.otf'))).toList();
+
+    for (String path in fontPaths) {
+      String fontName = path.split('/').last.split('.').first; // e.g. "orbitron" from "orbitron.ttf"
+      
+      // Flutter Engine me Font register karo
+      var loader = FontLoader(fontName);
+      loader.addFont(rootBundle.load(path));
+      await loader.load();
+      
+      if (!availableFonts.contains(fontName)) {
+        availableFonts.add(fontName);
+      }
+    }
+    print("✅ Loaded Fonts: $availableFonts");
+  } catch (e) {
+    print("❌ Font Loading Error: $e");
+  }
+}
+
 List<String> availableSounds = [];
 StreamController<String> notificationActionStream = StreamController.broadcast();
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
@@ -237,6 +269,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
     // Yahan hum resources load kar rahe hain
     await initNotifications();
     await loadAssetSounds();
+    await loadAssetFonts();
 
     final prefs = await SharedPreferences.getInstance();
 
@@ -258,7 +291,12 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
     soundAlarm.value = availableSounds.contains(sA) ? sA : "alarm.mp3";
     soundBreak.value = availableSounds.contains(sB) ? sB : "bell.mp3";
     soundDone.value = availableSounds.contains(sD) ? sD : "success.mp3";
-
+// 👇 FONTS PREFERENCE LOAD KARO (Niche add karo)
+    String? savedAppFont = prefs.getString('font_app');
+    String? savedTimerFont = prefs.getString('font_timer');
+    
+    if (savedAppFont != null && availableFonts.contains(savedAppFont)) appFont.value = savedAppFont;
+    if (savedTimerFont != null && availableFonts.contains(savedTimerFont)) timerFont.value = savedTimerFont;
     // Thoda delay taaki animation dikhe (Optional, hata sakte ho agar fast chahiye)
     await Future.delayed(const Duration(seconds: 3));
 
@@ -270,6 +308,8 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
         transitionDuration: const Duration(milliseconds: 800),
       ));
     }
+
+    
   }
 
   @override
@@ -538,6 +578,27 @@ Future<void> updateJsonFile() async {
   }
 }
 
+// 1. SPLASH SCREEN UPDATE (_loadAppResources function ke andar)
+  Future<void> _loadAppResources() async {
+    await initNotifications();
+    await loadAssetSounds();
+    await loadAssetFonts(); // 👈 YE LINE ADD KARO
+
+    final prefs = await SharedPreferences.getInstance();
+    
+    // ... (Baaki purana code same rahega) ...
+
+    // 👇 FONTS PREFERENCE LOAD KARO (Niche add karo)
+    String? savedAppFont = prefs.getString('font_app');
+    String? savedTimerFont = prefs.getString('font_timer');
+    
+    if (savedAppFont != null && availableFonts.contains(savedAppFont)) appFont.value = savedAppFont;
+    if (savedTimerFont != null && availableFonts.contains(savedTimerFont)) timerFont.value = savedTimerFont;
+
+    // ... (Baaki code same) ...
+  }
+
+// 2. MYAPP UPDATE (Pura MyApp class replace kar do)
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
   @override
@@ -545,20 +606,29 @@ class MyApp extends StatelessWidget {
     return ValueListenableBuilder<Color>(
         valueListenable: mainColor,
         builder: (context, color, child) {
-          return MaterialApp(
-            debugShowCheckedModeBanner: false,
-            title: 'Time Manager',
-            theme: ThemeData.dark().copyWith(
-              scaffoldBackgroundColor: Colors.black,
-              primaryColor: color,
-              colorScheme: const ColorScheme.dark().copyWith(secondary: color),
-            ),
-            home: const HomeScreen(),
+          // 👇 Font ka Listener Add kiya
+          return ValueListenableBuilder<String?>(
+            valueListenable: appFont,
+            builder: (context, fontName, child) {
+              return MaterialApp(
+                debugShowCheckedModeBanner: false,
+                title: 'Time Manager',
+                theme: ThemeData.dark().copyWith(
+                  scaffoldBackgroundColor: Colors.black,
+                  primaryColor: color,
+                  colorScheme: const ColorScheme.dark().copyWith(secondary: color),
+                  // 👇 GLOBAL FONT CHANGE LOGIC
+                  textTheme: fontName != null && fontName != "Default"
+                      ? Typography.whiteMountainView.apply(fontFamily: fontName)
+                      : null,
+                ),
+                home: const HomeScreen(),
+              );
+            }
           );
         });
   }
 }
-
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
   @override
@@ -643,7 +713,123 @@ class _TaskListScreenState extends State<TaskListScreen> with AutomaticKeepAlive
   void _toggleTask(int index) { setState(() { var task = allTasks[_dateKey]![index]; task['isDone'] = !task['isDone']; }); _saveTasks(); }
   void _changeDate(int days) { playButtonFeedback(); setState(() { selectedDate = selectedDate.add(Duration(days: days)); }); }
   Future<void> _pickDate() async { DateTime? picked = await showDatePicker(context: context, initialDate: selectedDate, firstDate: DateTime(2023), lastDate: DateTime(2030), builder: (context, child) { return Theme(data: ThemeData.dark().copyWith(colorScheme: ColorScheme.dark(primary: mainColor.value, onPrimary: Colors.black, surface: const Color(0xFF1E1E1E), onSurface: Colors.white), dialogBackgroundColor: const Color(0xFF1E1E1E)), child: child!); }); if (picked != null) { setState(() { selectedDate = picked; }); } }
-  @override Widget build(BuildContext context) { super.build(context); List<dynamic> currentTasks = _getCurrentDayTasks(); bool isToday = DateFormat('yyyy-MM-dd').format(selectedDate) == DateFormat('yyyy-MM-dd').format(DateTime.now()); return Scaffold(appBar: AppBar(title: Text("TASKS", style: TextStyle(color: mainColor.value, fontWeight: FontWeight.bold, letterSpacing: 2.0)), centerTitle: true), body: Column(children: [Container(padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 0), color: const Color(0xFF111111), child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [IconButton(icon: const Icon(Icons.arrow_back_ios, size: 18, color: Colors.grey), onPressed: () => _changeDate(-1)), GestureDetector(onTap: _pickDate, child: Row(children: [Icon(Icons.calendar_today, size: 16, color: mainColor.value), const SizedBox(width: 8), Text(isToday ? "TODAY" : DateFormat('EEE, dd MMM').format(selectedDate).toUpperCase(), style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16, letterSpacing: 1.0))])), IconButton(icon: const Icon(Icons.arrow_forward_ios, size: 18, color: Colors.grey), onPressed: () => _changeDate(1))])), Expanded(child: currentTasks.isEmpty ? Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.event_note, size: 60, color: Colors.grey.withOpacity(0.3)), const SizedBox(height: 10), Text("No tasks for ${DateFormat('dd MMM').format(selectedDate)}", style: TextStyle(color: Colors.grey.withOpacity(0.5), fontSize: 16))])) : ListView.builder(itemCount: currentTasks.length, padding: const EdgeInsets.all(15), itemBuilder: (context, index) { var task = currentTasks[index]; return Container(margin: const EdgeInsets.only(bottom: 15), decoration: BoxDecoration(color: const Color(0xFF1E1E1E), borderRadius: BorderRadius.circular(10), border: Border.all(color: task['isDone'] ? examColor.value.withOpacity(0.5) : mainColor.value.withOpacity(0.5))), child: ListTile(onTap: () => _toggleTask(index), leading: Icon(task['isDone'] ? Icons.check_circle : Icons.radio_button_unchecked, color: task['isDone'] ? examColor.value : mainColor.value), title: Text(task['title'], style: TextStyle(fontSize: 18, color: task['isDone'] ? Colors.grey : Colors.white, decoration: task['isDone'] ? TextDecoration.lineThrough : null, decorationColor: examColor.value, decorationThickness: 2)), trailing: IconButton(icon: const Icon(Icons.delete_outline, color: Colors.redAccent), onPressed: () => _deleteTask(index)))); }))],), floatingActionButton: FloatingActionButton(onPressed: () { playButtonFeedback(); _addNewTask(); }, backgroundColor: mainColor.value, child: const Icon(Icons.add, color: Colors.black))); }
+  // 👇 1. Helper Function: Check karega task status (Red/Green Dot ke liye)
+  int _getTaskStatus(DateTime date) {
+    String key = DateFormat('yyyy-MM-dd').format(date);
+    if (!allTasks.containsKey(key)) return 0; // Koi Task nahi
+    List tasks = allTasks[key]!;
+    if (tasks.isEmpty) return 0;
+    
+    // Agar ek bhi task pending hai to 1 (Red), warna 2 (Green)
+    bool hasPending = tasks.any((t) => t['isDone'] == false);
+    return hasPending ? 1 : 2; 
+  }
+
+  // 👇 2. Naya Custom Calendar Function (Jo Dots dikhayega)
+  void _showCustomCalendar() {
+    DateTime tempDate = selectedDate;
+    showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            // Calendar Calculation Logic
+            int year = tempDate.year;
+            int month = tempDate.month;
+            int daysInMonth = DateTime(year, month + 1, 0).day;
+            // 1st day of month logic
+            int firstWeekday = DateTime(year, month, 1).weekday; 
+            
+            return AlertDialog(
+              backgroundColor: const Color(0xFF1E1E1E),
+              contentPadding: const EdgeInsets.all(10),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15), side: BorderSide(color: mainColor.value)),
+              title: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.arrow_back_ios, size: 16, color: Colors.white),
+                    onPressed: () => setDialogState(() => tempDate = DateTime(year, month - 1)),
+                  ),
+                  Text(DateFormat('MMMM yyyy').format(tempDate).toUpperCase(), style: TextStyle(color: mainColor.value, fontWeight: FontWeight.bold, fontSize: 16)),
+                  IconButton(
+                    icon: const Icon(Icons.arrow_forward_ios, size: 16, color: Colors.white),
+                    onPressed: () => setDialogState(() => tempDate = DateTime(year, month + 1)),
+                  ),
+                ],
+              ),
+              content: SizedBox(
+                width: double.maxFinite,
+                height: 300,
+                child: Column(
+                  children: [
+                    // Weekday Headers (M T W T F S S)
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceAround,
+                      children: ["M", "T", "W", "T", "F", "S", "S"].map((e) => Text(e, style: const TextStyle(color: Colors.grey, fontWeight: FontWeight.bold))).toList(),
+                    ),
+                    const SizedBox(height: 10),
+                    Expanded(
+                      child: GridView.builder(
+                        itemCount: daysInMonth + (firstWeekday - 1),
+                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 7),
+                        itemBuilder: (context, index) {
+                          if (index < firstWeekday - 1) return const SizedBox(); // Empty space for alignment
+                          
+                          DateTime day = DateTime(year, month, index - (firstWeekday - 1) + 1);
+                          int status = _getTaskStatus(day); // Yahan wo upar wala function call ho raha hai
+                          bool isSelected = DateFormat('yyyy-MM-dd').format(day) == DateFormat('yyyy-MM-dd').format(selectedDate);
+                          bool isToday = DateFormat('yyyy-MM-dd').format(day) == DateFormat('yyyy-MM-dd').format(DateTime.now());
+
+                          return GestureDetector(
+                            onTap: () {
+                              setState(() => selectedDate = day);
+                              Navigator.pop(context);
+                            },
+                            child: Container(
+                              margin: const EdgeInsets.all(4),
+                              decoration: BoxDecoration(
+                                color: isSelected ? mainColor.value : (isToday ? Colors.white10 : Colors.transparent),
+                                borderRadius: BorderRadius.circular(8),
+                                border: isSelected ? null : Border.all(color: Colors.grey.withOpacity(0.2)),
+                              ),
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Text(
+                                    "${day.day}",
+                                    style: TextStyle(
+                                      color: isSelected ? Colors.black : Colors.white,
+                                      fontWeight: FontWeight.bold
+                                    ),
+                                  ),
+                                  if (status != 0) // Agar Status 0 nahi hai, to DOT dikhao
+                                    Container(
+                                      margin: const EdgeInsets.only(top: 4),
+                                      width: 6,
+                                      height: 6,
+                                      decoration: BoxDecoration(
+                                        color: status == 1 ? Colors.redAccent : Colors.greenAccent, // 1=Red, 2=Green
+                                        shape: BoxShape.circle
+                                      ),
+                                    )
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+  @override Widget build(BuildContext context) { super.build(context); List<dynamic> currentTasks = _getCurrentDayTasks(); bool isToday = DateFormat('yyyy-MM-dd').format(selectedDate) == DateFormat('yyyy-MM-dd').format(DateTime.now()); return Scaffold(appBar: AppBar(title: Text("TASKS", style: TextStyle(color: mainColor.value, fontWeight: FontWeight.bold, letterSpacing: 2.0)), centerTitle: true), body: Column(children: [Container(padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 0), color: const Color(0xFF111111), child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [IconButton(icon: const Icon(Icons.arrow_back_ios, size: 18, color: Colors.grey), onPressed: () => _changeDate(-1)), GestureDetector(onTap: _showCustomCalendar, child: Row(children: [Icon(Icons.calendar_today, size: 16, color: mainColor.value), const SizedBox(width: 8), Text(isToday ? "TODAY" : DateFormat('EEE, dd MMM').format(selectedDate).toUpperCase(), style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16, letterSpacing: 1.0))])), IconButton(icon: const Icon(Icons.arrow_forward_ios, size: 18, color: Colors.grey), onPressed: () => _changeDate(1))])), Expanded(child: currentTasks.isEmpty ? Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.event_note, size: 60, color: Colors.grey.withOpacity(0.3)), const SizedBox(height: 10), Text("No tasks for ${DateFormat('dd MMM').format(selectedDate)}", style: TextStyle(color: Colors.grey.withOpacity(0.5), fontSize: 16))])) : ListView.builder(itemCount: currentTasks.length, padding: const EdgeInsets.all(15), itemBuilder: (context, index) { var task = currentTasks[index]; return Container(margin: const EdgeInsets.only(bottom: 15), decoration: BoxDecoration(color: const Color(0xFF1E1E1E), borderRadius: BorderRadius.circular(10), border: Border.all(color: task['isDone'] ? examColor.value.withOpacity(0.5) : mainColor.value.withOpacity(0.5))), child: ListTile(onTap: () => _toggleTask(index), leading: Icon(task['isDone'] ? Icons.check_circle : Icons.radio_button_unchecked, color: task['isDone'] ? examColor.value : mainColor.value), title: Text(task['title'], style: TextStyle(fontSize: 18, color: task['isDone'] ? Colors.grey : Colors.white, decoration: task['isDone'] ? TextDecoration.lineThrough : null, decorationColor: examColor.value, decorationThickness: 2)), trailing: IconButton(icon: const Icon(Icons.delete_outline, color: Colors.redAccent), onPressed: () => _deleteTask(index)))); }))],), floatingActionButton: FloatingActionButton(onPressed: () { playButtonFeedback(); _addNewTask(); }, backgroundColor: mainColor.value, child: const Icon(Icons.add, color: Colors.black))); }
 }
 
 // ================== 2. TIMER SCREEN (UPDATED: HOURLY ALERTS) ==================
@@ -1264,41 +1450,260 @@ class _UniversalTimerScreenState extends State<UniversalTimerScreen> with Automa
     return GestureDetector(onTap: () { playButtonFeedback(); _toggleStudyBreak(isStudyBtn); }, child: Column(children: [Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: isActive ? activeColor : Colors.grey[900], shape: BoxShape.circle, border: isActive ? BoxBorder.lerp(null, null, 0) : Border.all(color: Colors.grey.withOpacity(0.3))), child: Icon(icon, color: isActive ? Colors.black : Colors.grey, size: 20)), const SizedBox(height: 4), Text(label, style: TextStyle(color: isActive ? activeColor : Colors.grey, fontSize: 10, fontWeight: FontWeight.bold))]));
   }
 
-  Widget _buildLandscapeLayout(Color primaryColor, Color secondaryColor) {
-    return Stack(children: [
-      Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
-          Expanded(flex: 3, child: Container(alignment: Alignment.centerLeft, padding: const EdgeInsets.only(left: 40.0), child: FittedBox(fit: BoxFit.scaleDown, child: Text(_formatTime(), style: TextStyle(fontSize: 180, fontWeight: FontWeight.bold, color: Colors.white, fontFamily: 'monospace', shadows: [Shadow(color: secondaryColor.withOpacity(0.5), blurRadius: 40)]))))),
-          Expanded(flex: 1, child: Container(color: Colors.transparent, child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-                        const SizedBox(height: 30),
-                        Padding(padding: const EdgeInsets.symmetric(horizontal: 10), child: Text(selectedSubject.toUpperCase(), textAlign: TextAlign.center, maxLines: 2, style: TextStyle(color: secondaryColor, fontSize: 20, fontWeight: FontWeight.bold, letterSpacing: 1.5))),
-                        const SizedBox(height: 20),
-                        GestureDetector(onTap: () { playButtonFeedback(); _startStopTimer(); }, child: Icon(isTimerRunning ? Icons.pause_circle_filled : Icons.play_circle_fill, color: secondaryColor, size: 75)),
-                        const SizedBox(height: 15),
-                        if (timerMode != 2) Row(mainAxisAlignment: MainAxisAlignment.center, children: [_buildMiniToggleBtn(Icons.school, "Study", true, primaryColor), const SizedBox(width: 20), _buildMiniToggleBtn(Icons.coffee, "Break", false, breakColor.value)]),
-                        const SizedBox(height: 10),
-                        IconButton(onPressed: () { _fullReset(); }, icon: const Icon(Icons.refresh, color: Colors.grey, size: 26), tooltip: "Reset")
-                      ])))
-        ]),
-      Positioned(top: 20, left: 225, right: 150, child: Align(alignment: Alignment.centerLeft, child: Container(padding: const EdgeInsets.all(4), decoration: BoxDecoration(color: const Color(0xFF1E1E1E).withOpacity(0.8), borderRadius: BorderRadius.circular(30), border: Border.all(color: Colors.grey.withOpacity(0.3))), child: Row(mainAxisSize: MainAxisSize.min, children: [_buildTypeBtn("STUDYWATCH", 0), _buildTypeBtn("POMODORO", 1), _buildTypeBtn("EXAM", 2)]))))
-    ]);
+  // 👇 Is function ko class ke andar sabse neeche paste kar do
+  // 👇 UPDATED HELPER FUNCTION (Fixes Static Glow)
+  Widget _buildTimeSegment(String text, TextStyle style) {
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        // 1. Invisible "88" (Sirf Jagah Rokne ke liye)
+        // ❌ Yahan se Shadow hata di hai taaki piche glow na kare
+        Text(
+          "88", 
+          style: style.copyWith(
+            color: Colors.transparent, 
+            shadows: [] // 👈 YE HAI MAGIC FIX (No Glow on Hidden)
+          )
+        ),
+        
+        // 2. Real Number (Ye dikhega aur Glow karega)
+        Text(text, style: style),
+      ],
+    );
   }
 
-  Widget _buildPortraitLayout(Color primaryColor, Color secondaryColor) {
+Widget _buildLandscapeLayout(Color primaryColor, Color secondaryColor) {
+    return Stack(children: [
+      Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+        
+       Expanded(
+  flex: 3,
+  child: Container(
+    alignment: Alignment.center,
+    
+    // 👇 FIX 1: Padding ko wapas Normal kar diya (Bottom padding hata di)
+    padding: const EdgeInsets.symmetric(horizontal: 20.0), 
+    
+    child: FittedBox(
+      fit: BoxFit.scaleDown,
+      child: ValueListenableBuilder<String?>(
+        valueListenable: timerFont,
+        builder: (context, font, child) {
+          return Text(
+            _formatTime(),
+            style: TextStyle(
+              fontSize: 250,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+              fontFamily: (font != null && font != "Default") ? font : 'monospace',
+              fontFeatures: const [FontFeature.tabularFigures()],
+              
+              // 👇 FIX 2: YE LINE ADD KARO (Jadu Yahan Hai)
+              // Ye text ko extra jagah lene se rokega aur center me rakhega
+              height: 1.0, 
+
+              shadows: [
+                Shadow(color: secondaryColor.withOpacity(0.5), blurRadius: 40)
+              ]
+            ),
+          );
+        },
+      ),
+    ),
+  ),
+),
+        // 👆 END UPDATE
+
+        Expanded(
+            flex: 1,
+            child: Container(
+                color: Colors.transparent,
+                child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const SizedBox(height: 30),
+                      Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 10),
+                          child: Text(selectedSubject.toUpperCase(),
+                              textAlign: TextAlign.center,
+                              maxLines: 2,
+                              style: TextStyle(
+                                  color: secondaryColor,
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                  letterSpacing: 1.5))),
+                      const SizedBox(height: 20),
+                      GestureDetector(
+                          onTap: () {
+                            playButtonFeedback();
+                            _startStopTimer();
+                          },
+                          child: Icon(
+                              isTimerRunning
+                                  ? Icons.pause_circle_filled
+                                  : Icons.play_circle_fill,
+                              color: secondaryColor,
+                              size: 75)),
+                      const SizedBox(height: 15),
+                      if (timerMode != 2)
+                        Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              _buildMiniToggleBtn(Icons.school, "Study", true,
+                                  primaryColor),
+                              const SizedBox(width: 20),
+                              _buildMiniToggleBtn(Icons.coffee, "Break", false,
+                                  breakColor.value)
+                            ]),
+                      const SizedBox(height: 10),
+                      IconButton(
+                          onPressed: () {
+                            _fullReset();
+                          },
+                          icon: const Icon(Icons.refresh,
+                              color: Colors.grey, size: 26),
+                          tooltip: "Reset")
+                    ])))
+      ]),
+      Positioned(
+          top: 20,
+          left: 225,
+          right: 150,
+          child: Align(
+              alignment: Alignment.centerLeft,
+              child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                      color: const Color(0xFF1E1E1E).withOpacity(0.8),
+                      borderRadius: BorderRadius.circular(30),
+                      border: Border.all(color: Colors.grey.withOpacity(0.3))),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    _buildTypeBtn("STUDYWATCH", 0),
+                    _buildTypeBtn("POMODORO", 1),
+                    _buildTypeBtn("EXAM", 2)
+                  ]))))
+    ]);
+  }
+Widget _buildPortraitLayout(Color primaryColor, Color secondaryColor) {
     return Column(children: [
       const SizedBox(height: 20),
-      Container(padding: const EdgeInsets.all(4), decoration: BoxDecoration(color: const Color(0xFF1E1E1E), borderRadius: BorderRadius.circular(30), border: Border.all(color: Colors.grey.withOpacity(0.3))), child: Row(mainAxisSize: MainAxisSize.min, children: [_buildTypeBtn("STUDYWATCH", 0), _buildTypeBtn("POMODORO", 1), _buildTypeBtn("EXAM", 2)])),
+      Container(
+          padding: const EdgeInsets.all(4),
+          decoration: BoxDecoration(
+              color: const Color(0xFF1E1E1E),
+              borderRadius: BorderRadius.circular(30),
+              border: Border.all(color: Colors.grey.withOpacity(0.3))),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            _buildTypeBtn("STUDYWATCH", 0),
+            _buildTypeBtn("POMODORO", 1),
+            _buildTypeBtn("EXAM", 2)
+          ])),
       const SizedBox(height: 20),
       Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-            ChoiceChip(label: Text(timerMode == 0 ? "STUDY" : (timerMode == 1 ? "FOCUS" : "EXAM")), selected: isStudyMode, selectedColor: primaryColor.withOpacity(0.2), labelStyle: TextStyle(color: isStudyMode ? primaryColor : Colors.grey), onSelected: (v) => _toggleStudyBreak(true)),
-            if (timerMode != 2) ...[const SizedBox(width: 15), ChoiceChip(label: Text(timerMode == 0 ? "NOT STUDY" : "BREAK"), selected: !isStudyMode, selectedColor: breakColor.value.withOpacity(0.2), labelStyle: TextStyle(color: !isStudyMode ? breakColor.value : Colors.grey), onSelected: (v) => _toggleStudyBreak(false))]
-          ]),
+        ChoiceChip(
+            label: Text(
+                timerMode == 0
+                    ? "STUDY"
+                    : (timerMode == 1 ? "FOCUS" : "EXAM"),
+                style: TextStyle(
+                    color: isStudyMode ? primaryColor : Colors.grey)),
+            selected: isStudyMode,
+            selectedColor: primaryColor.withOpacity(0.2),
+            onSelected: (v) => _toggleStudyBreak(true)),
+        if (timerMode != 2) ...[
+          const SizedBox(width: 15),
+          ChoiceChip(
+              label: Text(timerMode == 0 ? "NOT STUDY" : "BREAK",
+                  style: TextStyle(
+                      color: !isStudyMode ? breakColor.value : Colors.grey)),
+              selected: !isStudyMode,
+              selectedColor: breakColor.value.withOpacity(0.2),
+              onSelected: (v) => _toggleStudyBreak(false))
+        ]
+      ]),
       const SizedBox(height: 20),
-      Container(padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 5), decoration: BoxDecoration(color: const Color(0xFF1E1E1E), borderRadius: BorderRadius.circular(30), border: Border.all(color: secondaryColor.withOpacity(0.5))), child: Row(mainAxisSize: MainAxisSize.min, children: [
-                DropdownButtonHideUnderline(child: DropdownButton<String>(value: (studySubjects.contains(selectedSubject) || breakActivities.contains(selectedSubject)) ? selectedSubject : null, dropdownColor: const Color(0xFF2C2C2C), icon: Icon(Icons.arrow_drop_down, color: secondaryColor), style: TextStyle(color: subjectColors.containsKey(selectedSubject) ? Color(subjectColors[selectedSubject]!) : Colors.white, fontSize: 18, fontWeight: FontWeight.bold), hint: const Text("Select...", style: TextStyle(color: Colors.grey)), onChanged: (String? newValue) { if (newValue != null) { setState(() { selectedSubject = newValue; if (isStudyMode) lastStudySubject = newValue; else lastBreakActivity = newValue; }); } }, items: (isStudyMode ? studySubjects : breakActivities).map<DropdownMenuItem<String>>((String v) { Color txtColor = subjectColors.containsKey(v) ? Color(subjectColors[v]!) : Colors.white; return DropdownMenuItem(value: v, child: Text(v, style: TextStyle(color: txtColor, fontWeight: FontWeight.bold))); }).toList())),
-                const SizedBox(width: 5), InkWell(onTap: _addSubject, child: Icon(Icons.add_circle, color: secondaryColor)), const SizedBox(width: 10), InkWell(onTap: _manageSubjects, child: const Icon(Icons.list, color: Colors.grey))
-              ])),
+      Container(
+          padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 5),
+          decoration: BoxDecoration(
+              color: const Color(0xFF1E1E1E),
+              borderRadius: BorderRadius.circular(30),
+              border: Border.all(color: secondaryColor.withOpacity(0.5))),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            DropdownButtonHideUnderline(
+                child: DropdownButton<String>(
+                    value: (studySubjects.contains(selectedSubject) ||
+                            breakActivities.contains(selectedSubject))
+                        ? selectedSubject
+                        : null,
+                    dropdownColor: const Color(0xFF2C2C2C),
+                    icon: Icon(Icons.arrow_drop_down, color: secondaryColor),
+                    style: TextStyle(
+                        color: subjectColors.containsKey(selectedSubject)
+                            ? Color(subjectColors[selectedSubject]!)
+                            : Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold),
+                    hint: const Text("Select...",
+                        style: TextStyle(color: Colors.grey)),
+                    onChanged: (String? newValue) {
+                      if (newValue != null) {
+                        setState(() {
+                          selectedSubject = newValue;
+                          if (isStudyMode)
+                            lastStudySubject = newValue;
+                          else
+                            lastBreakActivity = newValue;
+                        });
+                      }
+                    },
+                    items: (isStudyMode ? studySubjects : breakActivities)
+                        .map<DropdownMenuItem<String>>((String v) {
+                      Color txtColor = subjectColors.containsKey(v)
+                          ? Color(subjectColors[v]!)
+                          : Colors.white;
+                      return DropdownMenuItem(
+                          value: v,
+                          child: Text(v,
+                              style: TextStyle(
+                                  color: txtColor,
+                                  fontWeight: FontWeight.bold)));
+                    }).toList())),
+            const SizedBox(width: 5),
+            InkWell(
+                onTap: _addSubject,
+                child: Icon(Icons.add_circle, color: secondaryColor)),
+            const SizedBox(width: 10),
+            InkWell(
+                onTap: _manageSubjects,
+                child: const Icon(Icons.list, color: Colors.grey))
+          ])),
       const Spacer(),
-      Padding(padding: const EdgeInsets.symmetric(horizontal: 5.0), child: FittedBox(fit: BoxFit.scaleDown, child: Text(_formatTime(), style: TextStyle(fontSize: 100, fontWeight: FontWeight.bold, color: Colors.white, fontFamily: 'monospace', shadows: [Shadow(color: secondaryColor.withOpacity(0.5), blurRadius: 20)])))),
+
+     Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 15.0),
+        child: FittedBox(
+          fit: BoxFit.scaleDown,
+          child: ValueListenableBuilder<String?>(
+            valueListenable: timerFont,
+            builder: (context, font, child) {
+              return Text(
+                _formatTime(),
+                style: TextStyle(
+                  fontSize: 100, // Portrait Size
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                  fontFamily: (font != null && font != "Default") ? font : 'monospace',
+                  // 👇 Ye line Text ko Stable rakhti hai
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                  shadows: [
+                    Shadow(color: secondaryColor.withOpacity(0.5), blurRadius: 20)
+                  ]
+                ),
+              );
+            },
+          ),
+        ),
+      ),
       if (timerMode == 1) Padding(padding: const EdgeInsets.only(top: 10), child: Text("ROUND $currentRound / $totalRounds", style: const TextStyle(color: Colors.grey, fontSize: 18, letterSpacing: 1.5))),
       const Spacer(),
       Row(mainAxisAlignment: MainAxisAlignment.center, children: [IconButton(onPressed: () { _fullReset(); }, icon: const Icon(Icons.refresh, color: Colors.grey, size: 40)), const SizedBox(width: 30), GestureDetector(onTap: () { playButtonFeedback(); _startStopTimer(); }, child: Container(height: 90, width: 90, decoration: BoxDecoration(color: secondaryColor, shape: BoxShape.circle, boxShadow: [BoxShadow(color: secondaryColor.withOpacity(0.5), blurRadius: 20)]), child: Icon(isTimerRunning ? Icons.pause : Icons.play_arrow, color: Colors.black, size: 50))), const SizedBox(width: 70)]),
@@ -1315,7 +1720,8 @@ class _UniversalTimerScreenState extends State<UniversalTimerScreen> with Automa
 // ================== 3. STATISTICS SCREEN ==================
 class StatisticsScreen extends StatefulWidget { const StatisticsScreen({super.key}); @override State<StatisticsScreen> createState() => _StatisticsScreenState(); }
 class _StatisticsScreenState extends State<StatisticsScreen> {
-  List<Map<String, dynamic>> historyLog = []; String trendViewMode = "Weekly"; String timeUnit = "Min"; String activeFilter = "All"; String streakViewMode = "Weekly"; int maxDailyStudySeconds = 1; String currentChartType = "Line"; Map<String, int> subjectColors = {}; DateTime focusedDate = DateTime.now(); String compareMode = "Day"; String compareChartType = "Bar"; DateTime? compareDate1; DateTime? compareDate2; DateTime selectedChartDate = DateTime.now(); int touchedIndex = -1;
+  List<Map<String, dynamic>> historyLog = []; String trendViewMode = "Weekly"; String timeUnit = "Min"; String activeFilter = "All"; String streakViewMode = "Weekly"; int maxDailyStudySeconds = 1; String currentChartType = "Line"; Map<String, int> subjectColors = {}; DateTime focusedDate = DateTime.now(); String compareMode = "Day"; String compareChartType = "Bar"; List<DateTime> compareDates = []; DateTime selectedChartDate = DateTime.now(); int touchedIndex = -1; String compareTimeUnit = "Min";
+  int streakYear = DateTime.now().year;
   Color _getColorForSubject(String subject) { if (subjectColors.containsKey(subject)) { return Color(subjectColors[subject]!); } return Colors.primaries[subject.length % Colors.primaries.length]; }
   @override void initState() { super.initState(); _loadData(); }
   Future<void> _loadData() async { final prefs = await SharedPreferences.getInstance(); String? historyString = prefs.getString('study_history'); if (historyString != null) { List<dynamic> loaded = jsonDecode(historyString); if (mounted) { setState(() { historyLog = List<Map<String, dynamic>>.from(loaded); _calculateMaxDailyStudy(); String? colorString = prefs.getString('subject_colors'); if (colorString != null) { subjectColors = Map<String, int>.from(jsonDecode(colorString)); } }); } } }
@@ -1323,14 +1729,143 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
   Set<String> _getStudyDates() { Set<String> studyDates = {}; for (var session in historyLog) { if (session['type'] == 'STUDY' && (session['time'] as int) > 0) { studyDates.add(session['date']); } } return studyDates; }
   Color _getIntensityColor(int seconds) { if (seconds == 0) return Colors.grey[900]!; double intensity = (seconds / maxDailyStudySeconds).clamp(0.0, 1.0); if (intensity < 0.3) intensity = 0.3; return Colors.orangeAccent.withOpacity(intensity); }
   double _convertTime(int seconds) { if (timeUnit == "Sec") return seconds.toDouble(); if (timeUnit == "Min") return seconds / 60; if (timeUnit == "Hr") return seconds / 3600; return seconds / 60; }
+  // 👇 Comparison Chart ke liye alag Converter
+  double _convertCompareTime(int seconds) {
+    if (compareTimeUnit == "Sec") return seconds.toDouble();
+    if (compareTimeUnit == "Min") return seconds / 60;
+    if (compareTimeUnit == "Hr") return seconds / 3600;
+    return seconds / 60;
+  }
   String _formatYAxis(double value) { if (value % 1 == 0) return value.toInt().toString(); return value.toStringAsFixed(1); }
   int _getDailyStudySeconds(DateTime date) { String dateStr = DateFormat('yyyy-MM-dd').format(date); int total = 0; for (var session in historyLog) { if (session['date'] == dateStr && session['type'] == 'STUDY') { total += (session['time'] as int); } } return total; }
   int _getMonthStudySeconds(DateTime date) { int total = 0; for (var session in historyLog) { if (session['type'] == 'STUDY') { DateTime sDate = DateTime.parse(session['date']); if (sDate.year == date.year && sDate.month == date.month) { total += (session['time'] as int); } } } return total; }
-  Future<void> _pickDate(bool isFirst) async { DateTime? picked = await showDatePicker(context: context, initialDate: DateTime.now(), firstDate: DateTime(2020), lastDate: DateTime.now(), builder: (context, child) { return Theme(data: ThemeData.dark().copyWith(colorScheme: ColorScheme.dark(primary: mainColor.value, onPrimary: Colors.black)), child: child!); }); if (picked != null) { setState(() { if (isFirst) compareDate1 = picked; else compareDate2 = picked; }); } }
+  // 👇 NAYA MULTI-SELECT PICKER LOGIC
+  Future<void> _pickCompareDate() async {
+    // 1. Check Limits
+    int limit = compareMode == "Day" ? 7 : 4;
+    if (compareDates.length >= limit) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text("Maximum $limit ${compareMode}s allowed!"), 
+        backgroundColor: Colors.redAccent
+      ));
+      return;
+    }
+
+    // 2. Pick Date
+    DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: DateTime.now(),
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now(),
+      builder: (context, child) {
+        return Theme(
+          data: ThemeData.dark().copyWith(
+            colorScheme: ColorScheme.dark(primary: mainColor.value, onPrimary: Colors.black),
+            dialogBackgroundColor: const Color(0xFF1E1E1E),
+          ),
+          child: child!,
+        );
+      },
+    );
+
+    // 3. Add to List (Duplicate check ke saath)
+    if (picked != null) {
+      // Month mode ke liye sirf month aur year match karo
+      bool exists = compareDates.any((d) {
+        if (compareMode == "Day") {
+          return DateFormat('yyyy-MM-dd').format(d) == DateFormat('yyyy-MM-dd').format(picked);
+        } else {
+          return d.year == picked.year && d.month == picked.month;
+        }
+      });
+
+      if (!exists) {
+        setState(() {
+          compareDates.add(picked);
+          compareDates.sort(); // Date wise sort kar do taaki graph seedha dikhe
+        });
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text("Date already added!"), backgroundColor: Colors.orange
+        ));
+      }
+    }
+  }
+
+  // Helper to remove date
+  void _removeCompareDate(int index) {
+    setState(() {
+      compareDates.removeAt(index);
+    });
+  }
   Widget _buildStreakVisualizer() { DateTime now = DateTime.now(); DateFormat dayFormat = DateFormat('E');
   if (streakViewMode == "Weekly") { int currentWeekday = now.weekday; DateTime startOfWeek = now.subtract(Duration(days: currentWeekday - 1)); return Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: List.generate(7, (index) { DateTime day = startOfWeek.add(Duration(days: index)); int seconds = _getDailyStudySeconds(day); bool isSelected = DateFormat('yyyy-MM-dd').format(day) == DateFormat('yyyy-MM-dd').format(selectedChartDate); bool isToday = DateFormat('yyyy-MM-dd').format(day) == DateFormat('yyyy-MM-dd').format(now); return GestureDetector(onTap: () { setState(() { selectedChartDate = day; }); }, child: Column(children: [Text(dayFormat.format(day)[0], style: TextStyle(color: isSelected ? examColor.value : (isToday ? mainColor.value : Colors.grey), fontWeight: FontWeight.bold)), const SizedBox(height: 5), Container(decoration: BoxDecoration(border: isSelected ? Border.all(color: Colors.white, width: 1.5) : null, shape: BoxShape.circle), child: Icon(seconds > 0 ? Icons.local_fire_department : Icons.circle_outlined, color: _getIntensityColor(seconds).withOpacity(seconds > 0 ? 1 : 0.2), size: 30))])); })); }
   else if (streakViewMode == "Monthly") { int daysInMonth = DateTime(focusedDate.year, focusedDate.month + 1, 0).day; Widget header = Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [IconButton(icon: Icon(Icons.arrow_back_ios, size: 16, color: mainColor.value), onPressed: () => setState(() => focusedDate = DateTime(focusedDate.year, focusedDate.month - 1))), Text(DateFormat('MMMM yyyy').format(focusedDate).toUpperCase(), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, letterSpacing: 1.5)), IconButton(icon: Icon(Icons.arrow_forward_ios, size: 16, color: mainColor.value), onPressed: () => setState(() => focusedDate = DateTime(focusedDate.year, focusedDate.month + 1)))]); return Column(children: [header, const SizedBox(height: 10), Wrap(spacing: 8, runSpacing: 8, alignment: WrapAlignment.center, children: List.generate(daysInMonth, (index) { DateTime day = DateTime(focusedDate.year, focusedDate.month, index + 1); int seconds = _getDailyStudySeconds(day); bool isSelected = DateFormat('yyyy-MM-dd').format(day) == DateFormat('yyyy-MM-dd').format(selectedChartDate); return GestureDetector(onTap: () { setState(() { selectedChartDate = day; }); }, child: Container(width: 28, height: 27, alignment: Alignment.center, decoration: BoxDecoration(color: seconds > 0 ? _getIntensityColor(seconds) : Colors.transparent, shape: BoxShape.rectangle, borderRadius: BorderRadius.circular(8), border: Border.all(color: isSelected ? Colors.white : (seconds > 0 ? Colors.transparent : Colors.grey[800]!), width: isSelected ? 1.5 : 1)), child: Text("${index + 1}", style: TextStyle(color: seconds > 0 ? Colors.black : (isSelected ? Colors.white : Colors.grey), fontSize: 10, fontWeight: FontWeight.bold)))); }))]); }
-  else { return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [const Text("LAST 365 DAYS", style: TextStyle(color: Colors.grey, fontSize: 10)), const SizedBox(height: 10), GridView.builder(shrinkWrap: true, physics: const NeverScrollableScrollPhysics(), itemCount: 365, gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 20, crossAxisSpacing: 3, mainAxisSpacing: 3, childAspectRatio: 1.0), itemBuilder: (context, index) { DateTime day = now.subtract(Duration(days: 364 - index)); int seconds = _getDailyStudySeconds(day); return Tooltip(message: "${DateFormat('MMM d').format(day)}: ${seconds ~/ 60} min", child: Container(decoration: BoxDecoration(color: _getIntensityColor(seconds), borderRadius: BorderRadius.circular(2)))); })]); }
+  // 👇 NAYA YEARLY CODE (GitHub Style + Year Navigation)
+else {
+  // 1. Check karo ki Leap Year hai ya nahi (366 days vs 365)
+  bool isLeap = (streakYear % 4 == 0 && streakYear % 100 != 0) || (streakYear % 400 == 0);
+  int daysInYear = isLeap ? 366 : 365;
+
+  // 2. Header banao (Left Arrow - Year - Right Arrow)
+  Widget header = Row(
+    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    children: [
+      IconButton(
+        icon: Icon(Icons.arrow_back_ios, size: 16, color: mainColor.value),
+        onPressed: () => setState(() => streakYear--), // Pichla saal
+      ),
+      Text(
+        "$streakYear", // Current Year dikhayega (e.g., 2025)
+        style: const TextStyle(
+          color: Colors.white, 
+          fontWeight: FontWeight.bold, 
+          letterSpacing: 1.5,
+          fontSize: 16
+        )
+      ),
+      IconButton(
+        icon: Icon(Icons.arrow_forward_ios, size: 16, color: mainColor.value),
+        onPressed: () => setState(() => streakYear++), // Agla saal
+      )
+    ]
+  );
+
+  return Column(
+    children: [
+      header,
+      const SizedBox(height: 10),
+      GridView.builder(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        itemCount: daysInYear,
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 20, // GitHub style boxes (Density waisi hi rahegi)
+          crossAxisSpacing: 3, 
+          mainAxisSpacing: 3, 
+          childAspectRatio: 1.0
+        ),
+        itemBuilder: (context, index) {
+          // Logic: Jan 1 se shuru karke saal ke end tak jayega
+          DateTime day = DateTime(streakYear, 1, 1).add(Duration(days: index));
+          
+          // Data fetch karo
+          int seconds = _getDailyStudySeconds(day);
+          
+          return Tooltip(
+            message: "${DateFormat('MMM d').format(day)}: ${seconds ~/ 60} min",
+            child: Container(
+              decoration: BoxDecoration(
+                color: _getIntensityColor(seconds), // Wahi dark/light color logic
+                borderRadius: BorderRadius.circular(2)
+              )
+            )
+          );
+        }
+      )
+    ]
+  );
+}
   }
   List<Map<String, dynamic>> _getTodayDataList() { Map<String, int> aggregated = {}; Map<String, String> subTypes = {}; String targetDateStr = DateFormat('yyyy-MM-dd').format(selectedChartDate); for (var session in historyLog) { if (session['date'] == targetDateStr) { bool include = false; if (activeFilter == "All") include = true; else if (activeFilter == "Study" && session['type'] == "STUDY") include = true; else if (activeFilter == "Break" && session['type'] == "BREAK") include = true; else if (activeFilter == "Exam" && session['type'] == "EXAM") include = true; if (include) { String sub = session['subject']; aggregated[sub] = (aggregated[sub] ?? 0) + (session['time'] as int); subTypes[sub] = session['type']; } } } List<Map<String, dynamic>> result = []; aggregated.forEach((key, value) { result.add({"subject": key, "time": _convertTime(value), "type": subTypes[key]}); }); return result; }
   Map<String, dynamic> _getTrendData() { List<FlSpot> studySpots = []; List<FlSpot> breakSpots = []; List<FlSpot> examSpots = []; List<String> xLabels = []; DateTime now = DateTime.now(); DateFormat formatter = DateFormat('yyyy-MM-dd'); int daysCount = (trendViewMode == "Monthly") ? 30 : (trendViewMode == "Yearly" ? 12 : 7); if (trendViewMode == "Yearly") { for (int i = 11; i >= 0; i--) { DateTime targetMonth = DateTime(now.year, now.month - i, 1); xLabels.add(DateFormat('MMM').format(targetMonth)); double studySec = 0; double breakSec = 0; double examSec = 0; for (var session in historyLog) { DateTime sDate = DateTime.parse(session['date']); if (sDate.year == targetMonth.year && sDate.month == targetMonth.month) { if (session['type'] == 'EXAM') examSec += (session['time'] as int); else if (session['type'] == 'STUDY') studySec += (session['time'] as int); else breakSec += (session['time'] as int); } } studySpots.add(FlSpot((11-i).toDouble(), _convertTime(studySec.toInt()))); breakSpots.add(FlSpot((11-i).toDouble(), _convertTime(breakSec.toInt()))); examSpots.add(FlSpot((11-i).toDouble(), _convertTime(examSec.toInt()))); } } else { for (int i = daysCount - 1; i >= 0; i--) { DateTime targetDate = now.subtract(Duration(days: i)); String dateStr = formatter.format(targetDate); if (trendViewMode == "Weekly") xLabels.add(DateFormat('E').format(targetDate)); else xLabels.add(DateFormat('d').format(targetDate)); double studySec = 0; double breakSec = 0; double examSec = 0; for (var session in historyLog) { if (session['date'] == dateStr) { if (session['type'] == 'EXAM') examSec += (session['time'] as int); else if (session['type'] == 'STUDY') studySec += (session['time'] as int); else breakSec += (session['time'] as int); } } studySpots.add(FlSpot((daysCount - 1 - i).toDouble(), _convertTime(studySec.toInt()))); breakSpots.add(FlSpot((daysCount - 1 - i).toDouble(), _convertTime(breakSec.toInt()))); examSpots.add(FlSpot((daysCount - 1 - i).toDouble(), _convertTime(examSec.toInt()))); } } return {"study": studySpots, "break": breakSpots, "exam": examSpots, "labels": xLabels}; }
@@ -1341,8 +1876,235 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
   }
   List<LineChartBarData> _buildTrendLines(Map<String, dynamic> trendData) { List<LineChartBarData> lines = []; if (activeFilter == "All" || activeFilter == "Break") { lines.add(LineChartBarData(spots: trendData['break'] as List<FlSpot>, isCurved: true, color: breakColor.value, barWidth: 3, dotData: FlDotData(show: true, getDotPainter: (spot, percent, barData, index) => FlDotCirclePainter(radius: 3, color: Colors.black, strokeWidth: 2, strokeColor: breakColor.value)), belowBarData: BarAreaData(show: true, color: breakColor.value.withOpacity(0.1)))); } if (activeFilter == "All" || activeFilter == "Exam") { lines.add(LineChartBarData(spots: trendData['exam'] as List<FlSpot>, isCurved: true, color: examColor.value, barWidth: 3, dotData: FlDotData(show: true, getDotPainter: (spot, percent, barData, index) => FlDotCirclePainter(radius: 3, color: Colors.black, strokeWidth: 2, strokeColor: examColor.value)), belowBarData: BarAreaData(show: true, color: examColor.value.withOpacity(0.1)))); } if (activeFilter == "All" || activeFilter == "Study") { lines.add(LineChartBarData(spots: trendData['study'] as List<FlSpot>, isCurved: true, color: mainColor.value, barWidth: 3, dotData: FlDotData(show: true, getDotPainter: (spot, percent, barData, index) => FlDotCirclePainter(radius: 3, color: Colors.black, strokeWidth: 2, strokeColor: mainColor.value)), belowBarData: BarAreaData(show: true, gradient: LinearGradient(colors: [mainColor.value.withOpacity(0.4), mainColor.value.withOpacity(0.0)], begin: Alignment.topCenter, end: Alignment.bottomCenter)))); } return lines; }
   Widget _buildDynamicChart(List<Map<String, dynamic>> data, List<FlSpot> study, List<FlSpot> breakS, List<FlSpot> examS, double maxY, double interval, List<String> labels) { Color getSubjectColor(String subject, String type) { if (subjectColors.containsKey(subject)) { return Color(subjectColors[subject]!); } if (type == 'EXAM') return examColor.value; if (type == 'BREAK') return breakColor.value; return _getColorForSubject(subject); } Widget getBottomLabel(double value, TitleMeta meta) { int index = value.toInt(); if (index >= 0 && index < labels.length) { String text = labels[index]; if (text.contains(" ")) text = text.replaceAll(" ", "\n"); return SideTitleWidget(axisSide: meta.axisSide, space: 4, child: Text(text, textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold), maxLines: 2, overflow: TextOverflow.ellipsis)); } return const Text(""); } if (currentChartType == "Pie") { return PieChart(PieChartData(pieTouchData: PieTouchData(touchCallback: (FlTouchEvent event, pieTouchResponse) { setState(() { if (!event.isInterestedForInteractions || pieTouchResponse == null || pieTouchResponse.touchedSection == null) { touchedIndex = -1; return; } touchedIndex = pieTouchResponse.touchedSection!.touchedSectionIndex; }); }), sectionsSpace: 2, centerSpaceRadius: 40, sections: data.asMap().entries.map((entry) { int idx = entry.key; Map item = entry.value; final double value = item['time']; final String subject = item['subject']; Color sectColor = getSubjectColor(subject, item['type']); final isTouched = idx == touchedIndex; final double radius = isTouched ? 70.0 : 60.0; final double fontSize = isTouched ? 14.0 : 10.0; return PieChartSectionData(color: sectColor, value: value, title: '${value.toStringAsFixed(1)}\n${timeUnit}', radius: radius, titleStyle: TextStyle(fontSize: fontSize, fontWeight: FontWeight.bold, color: Colors.white), badgeWidget: isTouched ? Container(padding: const EdgeInsets.all(6), decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(5)), child: Text(subject, style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold, fontSize: 10))) : null, badgePositionPercentageOffset: 1.3); }).toList()), swapAnimationDuration: const Duration(milliseconds: 300), swapAnimationCurve: Curves.easeInOutBack); } if (currentChartType == "Bar") { return BarChart(BarChartData(barTouchData: BarTouchData(touchCallback: (FlTouchEvent event, barTouchResponse) { setState(() { if (!event.isInterestedForInteractions || barTouchResponse == null || barTouchResponse.spot == null) { touchedIndex = -1; return; } touchedIndex = barTouchResponse.spot!.touchedBarGroupIndex; }); }, touchTooltipData: BarTouchTooltipData(getTooltipColor: (_) => Colors.grey[900]!, getTooltipItem: (group, groupIndex, rod, rodIndex) { String subject = data[group.x.toInt()]['subject']; return BarTooltipItem("$subject\n", TextStyle(color: rod.color, fontWeight: FontWeight.bold), children: [TextSpan(text: "${rod.toY.toStringAsFixed(1)} $timeUnit", style: const TextStyle(color: Colors.white))]); })), gridData: FlGridData(show: false), titlesData: FlTitlesData(leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 40, getTitlesWidget: (v, m) => Text(_formatYAxis(v), style: const TextStyle(color: Colors.grey, fontSize: 10)))), rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)), topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)), bottomTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 40, getTitlesWidget: getBottomLabel))), borderData: FlBorderData(show: false), barGroups: data.asMap().entries.map((entry) { int idx = entry.key; Map item = entry.value; Color barColor = getSubjectColor(item['subject'], item['type']); bool isTouched = idx == touchedIndex; Color finalColor = isTouched ? Colors.white : barColor; double width = isTouched ? 28 : 20; return BarChartGroupData(x: idx, barRods: [BarChartRodData(toY: item['time'], color: finalColor, width: width, borderRadius: BorderRadius.circular(4), backDrawRodData: BackgroundBarChartRodData(show: true, toY: maxY, color: Colors.grey[900]))]); }).toList())); } return LineChart(LineChartData(clipData: const FlClipData.none(), gridData: FlGridData(show: true, drawVerticalLine: false, getDrawingHorizontalLine: (value) => const FlLine(color: Colors.white10, strokeWidth: 1)), titlesData: FlTitlesData(show: true, topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)), rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)), leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 40, interval: interval, getTitlesWidget: (v, m) => Text(_formatYAxis(v), style: const TextStyle(color: Colors.grey, fontSize: 10)))), bottomTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 40, interval: 1, getTitlesWidget: getBottomLabel))), borderData: FlBorderData(show: false), minY: 0, maxY: maxY, lineTouchData: LineTouchData(touchCallback: (FlTouchEvent event, LineTouchResponse? lineTouch) { setState(() { if (!event.isInterestedForInteractions || lineTouch == null || lineTouch.lineBarSpots == null) { touchedIndex = -1; return; } touchedIndex = lineTouch.lineBarSpots![0].spotIndex; }); }, touchTooltipData: LineTouchTooltipData(getTooltipColor: (_) => Colors.grey[900]!, getTooltipItems: (touchedSpots) { return touchedSpots.map((spot) { if(spot.y == 0) return null; int index = spot.x.toInt(); String subjectName = data[index]['subject']; return LineTooltipItem("$subjectName\n", TextStyle(color: spot.bar.color, fontWeight: FontWeight.bold), children: [TextSpan(text: "${spot.y.toStringAsFixed(1)} $timeUnit", style: const TextStyle(color: Colors.white))]); }).toList(); })), lineBarsData: [if (activeFilter == "All" || activeFilter == "Study") LineChartBarData(spots: study, isCurved: true, color: mainColor.value, barWidth: 3, belowBarData: BarAreaData(show: true, gradient: LinearGradient(colors: [mainColor.value.withOpacity(0.4), mainColor.value.withOpacity(0.0)], begin: Alignment.topCenter, end: Alignment.bottomCenter)), dotData: FlDotData(show: true, getDotPainter: (spot, percent, barData, index) { bool isTouched = index == touchedIndex; return FlDotCirclePainter(radius: isTouched ? 8 : 4, color: mainColor.value, strokeWidth: 0); })), if (activeFilter == "All" || activeFilter == "Exam") LineChartBarData(spots: examS, isCurved: true, color: examColor.value, barWidth: 3, belowBarData: BarAreaData(show: true, color: examColor.value.withOpacity(0.1)), dotData: FlDotData(show: true, getDotPainter: (spot, percent, barData, index) { bool isTouched = index == touchedIndex; return FlDotCirclePainter(radius: isTouched ? 8 : 4, color: examColor.value, strokeWidth: 0); })), if (activeFilter == "All" || activeFilter == "Break") LineChartBarData(spots: breakS, isCurved: true, color: breakColor.value, barWidth: 3, belowBarData: BarAreaData(show: true, color: breakColor.value.withOpacity(0.1)), dotData: FlDotData(show: true, getDotPainter: (spot, percent, barData, index) { bool isTouched = index == touchedIndex; return FlDotCirclePainter(radius: isTouched ? 8 : 4, color: breakColor.value, strokeWidth: 0); }))])); }
-  Widget _buildComparisonChart() { double val1 = 0; double val2 = 0; String label1 = "Date A"; String label2 = "Date B"; if (compareDate1 != null) { if (compareMode == "Day") { val1 = _convertTime(_getDailyStudySeconds(compareDate1!)); label1 = DateFormat('dd MMM').format(compareDate1!); } else { val1 = _convertTime(_getMonthStudySeconds(compareDate1!)); label1 = DateFormat('MMM yy').format(compareDate1!); } } if (compareDate2 != null) { if (compareMode == "Day") { val2 = _convertTime(_getDailyStudySeconds(compareDate2!)); label2 = DateFormat('dd MMM').format(compareDate2!); } else { val2 = _convertTime(_getMonthStudySeconds(compareDate2!)); label2 = DateFormat('MMM yy').format(compareDate2!); } } double maxY = (val1 > val2 ? val1 : val2); if (maxY == 0) maxY = 10; maxY *= 1.2; return Column(children: [Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [_buildUnitDropdown(compareChartType, (v) { setState(() { compareChartType = v; }); }, ["Bar", "Line", "Pie"]), _buildUnitDropdown(compareMode, (v) { setState(() { compareMode = v; compareDate1 = null; compareDate2 = null; }); }, ["Day", "Month"])]), const SizedBox(height: 10), Row(children: [Expanded(child: ElevatedButton(onPressed: () => _pickDate(true), style: ElevatedButton.styleFrom(backgroundColor: mainColor.value.withOpacity(0.1), padding: const EdgeInsets.symmetric(vertical: 12), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10), side: BorderSide(color: mainColor.value, width: 1))), child: Text(compareDate1 == null ? "Select 1" : DateFormat(compareMode == "Day" ? 'dd/MM' : 'MMM yy').format(compareDate1!), style: TextStyle(color: mainColor.value, fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis))), const Padding(padding: EdgeInsets.symmetric(horizontal: 10), child: Text("VS", style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold))), Expanded(child: ElevatedButton(onPressed: () => _pickDate(false), style: ElevatedButton.styleFrom(backgroundColor: breakColor.value.withOpacity(0.1), padding: const EdgeInsets.symmetric(vertical: 12), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10), side: BorderSide(color: breakColor.value, width: 1))), child: Text(compareDate2 == null ? "Select 2" : DateFormat(compareMode == "Day" ? 'dd/MM' : 'MMM yy').format(compareDate2!), style: TextStyle(color: breakColor.value, fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis)))]), const SizedBox(height: 20), Container(height: 250, padding: const EdgeInsets.fromLTRB(10, 20, 20, 10), decoration: BoxDecoration(color: const Color(0xFF050505), borderRadius: BorderRadius.circular(15)), child: _buildCompareChartContent(val1, val2, maxY, label1, label2))]); }
-  Widget _buildCompareChartContent(double val1, double val2, double maxY, String label1, String label2) { Widget getCompareLabel(double value, TitleMeta meta) { String text = ""; if (value.toInt() == 0) text = label1; else if (value.toInt() == 1) text = label2; else return const Text(""); if (text.contains(" ")) text = text.replaceAll(" ", "\n"); return SideTitleWidget(axisSide: meta.axisSide, space: 4, child: Text(text, textAlign: TextAlign.center, style: TextStyle(color: value.toInt() == 0 ? mainColor.value : breakColor.value, fontSize: 10, fontWeight: FontWeight.bold))); } if (compareChartType == "Pie") { if (val1 == 0 && val2 == 0) return const Center(child: Text("Select dates to compare", style: TextStyle(color: Colors.grey))); return PieChart(PieChartData(sectionsSpace: 4, centerSpaceRadius: 40, sections: [PieChartSectionData(color: mainColor.value, value: val1 == 0 ? 0.1 : val1, title: "${val1.toStringAsFixed(1)}\n$timeUnit", radius: 50, titleStyle: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.black)), PieChartSectionData(color: breakColor.value, value: val2 == 0 ? 0.1 : val2, title: "${val2.toStringAsFixed(1)}\n$timeUnit", radius: 50, titleStyle: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.black))])); } if (compareChartType == "Line") { return LineChart(LineChartData(gridData: FlGridData(show: true, drawVerticalLine: false, getDrawingHorizontalLine: (v) => const FlLine(color: Colors.white10, strokeWidth: 1)), titlesData: FlTitlesData(leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 40, getTitlesWidget: (v, m) => Text(_formatYAxis(v), style: const TextStyle(color: Colors.grey, fontSize: 10)))), bottomTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 40, getTitlesWidget: getCompareLabel)), topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)), rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false))), borderData: FlBorderData(show: false), minY: 0, maxY: maxY, lineBarsData: [LineChartBarData(spots: [FlSpot(0, val1), FlSpot(1, val2)], isCurved: false, color: Colors.white, barWidth: 2, dotData: FlDotData(show: true, getDotPainter: (spot, percent, barData, index) { return FlDotCirclePainter(radius: 6, color: index == 0 ? mainColor.value : breakColor.value, strokeWidth: 0); }))])); } return BarChart(BarChartData(gridData: FlGridData(show: false), titlesData: FlTitlesData(leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 40, getTitlesWidget: (v, m) => Text(_formatYAxis(v), style: const TextStyle(color: Colors.grey, fontSize: 10)))), rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)), topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)), bottomTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 40, getTitlesWidget: getCompareLabel))), borderData: FlBorderData(show: false), barGroups: [BarChartGroupData(x: 0, barRods: [BarChartRodData(toY: val1, color: mainColor.value, width: 40, borderRadius: BorderRadius.circular(4), backDrawRodData: BackgroundBarChartRodData(show: true, toY: maxY, color: Colors.grey[900]))]), BarChartGroupData(x: 1, barRods: [BarChartRodData(toY: val2, color: breakColor.value, width: 40, borderRadius: BorderRadius.circular(4), backDrawRodData: BackgroundBarChartRodData(show: true, toY: maxY, color: Colors.grey[900]))])])); }
+ // 👇 UPDATED COMPARISON UI (With Unit Selector)
+  Widget _buildComparisonChart() {
+    return Column(
+      children: [
+        // 1. Controls Row
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            // Left Side: Day/Month Toggle & Chart Type
+            Row(
+              children: [
+                _buildUnitDropdown(compareMode, (v) {
+                  setState(() {
+                    compareMode = v;
+                    compareDates.clear();
+                  });
+                }, ["Day", "Month"]),
+                const SizedBox(width: 10),
+                _buildUnitDropdown(compareChartType, (v) {
+                  setState(() { compareChartType = v; });
+                }, ["Bar", "Line", "Pie"]),
+              ],
+            ),
+
+            // Right Side: Unit Selector (Sec/Min/Hr) - NEW 🟢
+            _buildUnitDropdown(compareTimeUnit, (v) {
+              setState(() { compareTimeUnit = v; });
+            }, ["Sec", "Min", "Hr"]),
+          ],
+        ),
+        
+        const SizedBox(height: 10),
+
+        // 2. Add Button
+        if (compareDates.length < (compareMode == "Day" ? 7 : 4))
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: _pickCompareDate,
+              icon: const Icon(Icons.add, color: Colors.black),
+              label: Text("Add ${compareMode} to Compare", style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+              style: ElevatedButton.styleFrom(backgroundColor: mainColor.value),
+            ),
+          ),
+
+        const SizedBox(height: 10),
+
+        // 3. Selected Dates Chips
+        if (compareDates.isNotEmpty)
+          Wrap(
+            spacing: 8,
+            children: List.generate(compareDates.length, (index) {
+              DateTime date = compareDates[index];
+              String label = compareMode == "Day" 
+                  ? DateFormat('dd MMM').format(date) 
+                  : DateFormat('MMM yy').format(date);
+              
+              return Chip(
+                label: Text(label, style: const TextStyle(color: Colors.white, fontSize: 12)),
+                backgroundColor: _getDistinctColor(index),
+                deleteIcon: const Icon(Icons.close, size: 16, color: Colors.grey),
+                onDeleted: () => _removeCompareDate(index),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: BorderSide(color: Colors.grey.withOpacity(0.3))),
+              );
+            }),
+          ),
+
+        const SizedBox(height: 20),
+
+        // 4. The Chart Area
+        Container(
+          height: 250,
+          padding: const EdgeInsets.fromLTRB(10, 20, 20, 10),
+          decoration: BoxDecoration(color: const Color(0xFF050505), borderRadius: BorderRadius.circular(15)),
+          child: compareDates.isEmpty
+              ? const Center(child: Text("Add dates to compare performance", style: TextStyle(color: Colors.grey)))
+              : _buildCompareChartContent(),
+        )
+      ],
+    );
+  }
+
+ // 👇 UPDATED CHART BUILDER (2 Decimal Limit Fixed)
+  Widget _buildCompareChartContent() {
+    List<double> values = [];
+    List<String> labels = [];
+    double maxY = 0;
+
+    // Data Calculation
+    for (var date in compareDates) {
+      double val = 0;
+      String label = "";
+      if (compareMode == "Day") {
+        val = _convertCompareTime(_getDailyStudySeconds(date)); // Naya Converter Use kiya
+        label = DateFormat('dd/MM').format(date);
+      } else {
+        val = _convertCompareTime(_getMonthStudySeconds(date));
+        label = DateFormat('MMM').format(date);
+      }
+      values.add(val);
+      labels.add(label);
+      if (val > maxY) maxY = val;
+    }
+    if (maxY == 0) maxY = 10;
+    maxY *= 1.2;
+
+    Color getColor(int index) => _getDistinctColor(index);
+
+    // --- PIE CHART ---
+    if (compareChartType == "Pie") {
+      return PieChart(
+        PieChartData(
+          sectionsSpace: 2,
+          centerSpaceRadius: 40,
+          sections: List.generate(values.length, (i) {
+            return PieChartSectionData(
+              color: getColor(i),
+              value: values[i] == 0 ? 0.1 : values[i],
+              // 👇 FIXED: Sirf 2 Decimal places dikhega
+              title: "${values[i].toStringAsFixed(2)}\n$compareTimeUnit",
+              radius: 50,
+              titleStyle: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.black),
+            );
+          }),
+        ),
+      );
+    }
+
+    // --- LINE CHART ---
+    if (compareChartType == "Line") {
+      return LineChart(
+        LineChartData(
+          gridData: FlGridData(show: true, drawVerticalLine: false, getDrawingHorizontalLine: (v) => const FlLine(color: Colors.white10, strokeWidth: 1)),
+          titlesData: FlTitlesData(
+            leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 40, getTitlesWidget: (v, m) => Text(v.toStringAsFixed(1), style: const TextStyle(color: Colors.grey, fontSize: 10)))),
+            bottomTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, interval: 1, getTitlesWidget: (v, m) {
+              int idx = v.toInt();
+              if (idx >= 0 && idx < labels.length) return Padding(padding: const EdgeInsets.only(top: 5), child: Text(labels[idx], style: TextStyle(color: getColor(idx), fontSize: 10, fontWeight: FontWeight.bold)));
+              return const Text("");
+            })),
+            topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          ),
+          borderData: FlBorderData(show: false),
+          minY: 0,
+          maxY: maxY,
+          lineTouchData: LineTouchData(
+            touchTooltipData: LineTouchTooltipData(
+              getTooltipColor: (_) => Colors.grey[900]!,
+              getTooltipItems: (spots) {
+                return spots.map((spot) {
+                  // 👇 FIXED: Tooltip me 2 decimal
+                  return LineTooltipItem("${spot.y.toStringAsFixed(2)} $compareTimeUnit", TextStyle(color: spot.bar.color, fontWeight: FontWeight.bold));
+                }).toList();
+              }
+            )
+          ),
+          lineBarsData: [
+            LineChartBarData(
+              spots: List.generate(values.length, (i) => FlSpot(i.toDouble(), values[i])),
+              isCurved: false,
+              color: Colors.white,
+              barWidth: 2,
+              dotData: FlDotData(show: true, getDotPainter: (spot, percent, barData, index) => FlDotCirclePainter(radius: 6, color: getColor(index), strokeWidth: 0)),
+            )
+          ]
+        ),
+      );
+    }
+
+    // --- BAR CHART ---
+    return BarChart(
+      BarChartData(
+        barTouchData: BarTouchData(
+          touchTooltipData: BarTouchTooltipData(
+            getTooltipColor: (_) => Colors.grey[900]!,
+            getTooltipItem: (group, groupIndex, rod, rodIndex) {
+               // 👇 FIXED: Tooltip me 2 decimal
+               return BarTooltipItem(
+                 "${labels[group.x.toInt()]}\n",
+                 TextStyle(color: rod.color, fontWeight: FontWeight.bold),
+                 children: [TextSpan(text: "${rod.toY.toStringAsFixed(2)} $compareTimeUnit", style: const TextStyle(color: Colors.white))]
+               );
+            }
+          )
+        ),
+        gridData: FlGridData(show: false),
+        titlesData: FlTitlesData(
+          leftTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, reservedSize: 40, getTitlesWidget: (v, m) => Text(v.toStringAsFixed(1), style: const TextStyle(color: Colors.grey, fontSize: 10)))),
+          bottomTitles: AxisTitles(sideTitles: SideTitles(showTitles: true, getTitlesWidget: (v, m) {
+             int idx = v.toInt();
+             if (idx >= 0 && idx < labels.length) return Padding(padding: const EdgeInsets.only(top: 5), child: Text(labels[idx], style: const TextStyle(color: Colors.white, fontSize: 10)));
+             return const Text("");
+          })),
+          topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+        ),
+        borderData: FlBorderData(show: false),
+        barGroups: List.generate(values.length, (i) {
+          return BarChartGroupData(
+            x: i,
+            barRods: [
+              BarChartRodData(
+                toY: values[i],
+                color: getColor(i),
+                width: 20,
+                borderRadius: BorderRadius.circular(4),
+                backDrawRodData: BackgroundBarChartRodData(show: true, toY: maxY, color: Colors.grey[900])
+              )
+            ]
+          );
+        }),
+      ),
+    );
+  }
+
+  // Color Helper: Alag alag bars ke liye alag rang
+  Color _getDistinctColor(int index) {
+    List<Color> colors = [
+      mainColor.value,
+      breakColor.value,
+      examColor.value,
+      Colors.orangeAccent,
+      Colors.purpleAccent,
+      Colors.yellowAccent,
+      Colors.tealAccent
+    ];
+    return colors[index % colors.length];
+  }
 }
 
 // ================== 4. SETTINGS SCREEN (FINAL FIXED) ==================
@@ -1356,62 +2118,6 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   static const platform = MethodChannel('com.example.time_app/settings');
 
-<<<<<<< HEAD
-  // --- DONATION LOGIC (ONLY BUY ME A COFFEE) ---
-=======
-  // --- DONATION LOGIC START ---
-Future<void> _payWithUPI(String amount) async {
-    const String upiId = "saqibqamar7866@okicici"; 
-    
-    // 👇 FIX: Sirf Amount set karo (Example: 10.00)
-    String formattedAmount = "$amount.00";
-  
-    // Ab GPay/PhonePe khud tumhara naam bank se check karega.
-    final Uri upiUrl = Uri.parse(
-        "upi://pay?pa=$upiId&am=$formattedAmount&cu=INR"
-    );
-
-    try {
-      // Launch Mode ko 'externalNonBrowserApplication' karo (Best for UPI)
-      if (!await launchUrl(upiUrl, mode: LaunchMode.externalNonBrowserApplication)) {
-        if (mounted) {
-          // 👇 Agar app na khule, to ID copy karwa do (Backup Plan)
-          Clipboard.setData(const ClipboardData(text: upiId));
-          ScaffoldMessenger.of(context).showSnackBar(
-             const SnackBar(content: Text("UPI App not found. ID Copied to Clipboard!"), backgroundColor: Colors.orange),
-          );
-        }
-      }
-    } catch (e) {
-      print("UPI Error: $e");
-      // Error aane par bhi user ki help ke liye ID copy karwa do
-      Clipboard.setData(const ClipboardData(text: upiId));
-      if(mounted){
-        ScaffoldMessenger.of(context).showSnackBar(
-             const SnackBar(content: Text("Error opening app. UPI ID Copied!"), backgroundColor: Colors.red),
-        );
-      }
-    }
-  }
-  Widget _buildDonationBox(String amount) {
-    return Expanded(
-      child: GestureDetector(
-        onTap: () => _payWithUPI(amount), // Button dabte hi wo amount jayega
-        child: Container(
-          margin: const EdgeInsets.symmetric(horizontal: 4),
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          decoration: BoxDecoration(
-            color: Colors.green[700],
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: Colors.white24),
-          ),
-          alignment: Alignment.center,
-          child: Text("₹$amount", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-        ),
-      ),
-    );
-  }
->>>>>>> 31058bdb48e33c264d30826c62d4a7e0517e9d26
   Future<void> _openBuyMeCoffee() async {
     final Uri url = Uri.parse('https://buymeacoffee.com/saqib791');
     if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
@@ -1568,6 +2274,22 @@ Future<void> _payWithUPI(String amount) async {
           _buildSettingsTile(icon: Icons.coffee, title: "Break Theme", subtitle: "Break Timer & Graph Color", color: breakColor.value, onTap: () => _openColorPicker("Break", breakColor, 'color_break')),
           const SizedBox(height: 10),
           _buildSettingsTile(icon: Icons.school, title: "Exam Theme", subtitle: "Exam Mode & Graph Color", color: examColor.value, onTap: () => _openColorPicker("Exam", examColor, 'color_exam')),
+
+// ... Theme Colors section ke baad ...
+
+          const SizedBox(height: 30),
+          const Divider(color: Colors.grey),
+          const SizedBox(height: 15),
+
+          const Text("FONT SETTINGS", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+          const SizedBox(height: 15),
+          
+          // 1. App Theme Font
+          _buildFontTile("App Theme Font", "Change text style of entire app", appFont, 'font_app'),
+          const SizedBox(height: 10),
+          
+          // 2. Timer Font
+          _buildFontTile("Timer Display Font", "Change big timer style", timerFont, 'font_timer'),
 
           const SizedBox(height: 30),
           const Divider(color: Colors.grey),
@@ -1812,6 +2534,8 @@ Future<void> _payWithUPI(String amount) async {
     );
   }
 
+  
+
   Widget _buildSoundTile(String title, String subtitle, ValueNotifier<String> notifier, String prefKey) {
     return Container(
       decoration: BoxDecoration(color: const Color(0xFF111111), borderRadius: BorderRadius.circular(15), border: Border.all(color: Colors.grey.withOpacity(0.3))),
@@ -1821,6 +2545,118 @@ Future<void> _payWithUPI(String amount) async {
         subtitle: Text(subtitle, style: TextStyle(color: Colors.grey[600], fontSize: 12)),
         trailing: Row(mainAxisSize: MainAxisSize.min, children: [Text(notifier.value.replaceAll(".mp3", "").toUpperCase(), style: TextStyle(color: mainColor.value, fontWeight: FontWeight.bold)), const SizedBox(width: 10), const Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey)]),
         onTap: () { _showSoundPicker(title, notifier, prefKey); },
+      ),
+    );
+  }
+
+ // 👇 FINAL CORRECTED FONT PICKER FUNCTION
+  void _showFontPicker(String title, ValueNotifier<String?> notifier, String prefKey) {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFF1E1E1E),
+          title: Text("Select $title", style: TextStyle(color: mainColor.value)),
+          content: SizedBox(
+            width: double.maxFinite,
+            height: 300,
+            child: ListView.builder(
+              itemCount: availableFonts.length,
+              itemBuilder: (context, index) {
+                String fontName = availableFonts[index];
+                bool isSelected = notifier.value == fontName || (notifier.value == null && fontName == "Default");
+                
+                return GestureDetector( // Click detect karne ke liye
+                  onTap: () async {
+                    playButtonFeedback();
+                    setState(() { 
+                      notifier.value = fontName == "Default" ? null : fontName; 
+                    });
+                    final prefs = await SharedPreferences.getInstance();
+                    if (fontName == "Default") {
+                      await prefs.remove(prefKey);
+                    } else {
+                      await prefs.setString(prefKey, fontName);
+                    }
+                    Navigator.pop(context);
+                  },
+                  child: Container(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.symmetric(vertical: 15, horizontal: 15), // ✅ Padding badhai
+                    decoration: BoxDecoration(
+                        color: isSelected ? mainColor.value.withOpacity(0.1) : Colors.transparent,
+                        borderRadius: BorderRadius.circular(10),
+                        border: isSelected ? Border.all(color: mainColor.value) : Border.all(color: Colors.white10)),
+                    child: Row(
+                      children: [
+                        Icon(Icons.text_fields, color: isSelected ? mainColor.value : Colors.white),
+                        const SizedBox(width: 15),
+                        Expanded(
+                          child: Text(
+                            fontName, 
+                            style: TextStyle(
+                                color: Colors.white, 
+                                fontFamily: fontName == "Default" ? null : fontName,
+                                fontSize: 18,
+                                height: 1.2 // Spacing fix
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (isSelected) Icon(Icons.check_circle, color: mainColor.value)
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text("CLOSE", style: TextStyle(color: Colors.redAccent)))],
+        );
+      },
+    );
+  }
+
+Widget _buildFontTile(String title, String subtitle, ValueNotifier<String?> notifier, String prefKey) {
+    return Container(
+      // ❌ Old: height: 70, (Hata diya)
+      // ✅ New: Padding use kiya taaki content kate nahi
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      decoration: BoxDecoration(
+        color: const Color(0xFF111111), 
+        borderRadius: BorderRadius.circular(15), 
+        border: Border.all(color: Colors.grey.withOpacity(0.3))
+      ),
+      child: ListTile(
+        leading: const Icon(Icons.font_download, color: Colors.white),
+        title: Text(title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        subtitle: Text(subtitle, style: TextStyle(color: Colors.grey[600], fontSize: 12)),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min, 
+          children: [
+            // 👇 Preview Text Container (Width fix ki taaki alignment na bigde)
+            Container(
+              constraints: const BoxConstraints(maxWidth: 120), 
+              alignment: Alignment.centerRight, // Right side align
+              child: Text(
+                notifier.value ?? "Default", 
+                textAlign: TextAlign.right,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                    color: mainColor.value, 
+                    fontWeight: FontWeight.bold,
+                    fontFamily: notifier.value, // Preview here
+                    fontSize: 16,
+                    height: 1.2 // Thoda sa breathing space diya
+                )
+              ),
+            ), 
+            const SizedBox(width: 10), 
+            const Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey)
+          ]
+        ),
+        onTap: () { _showFontPicker(title, notifier, prefKey); },
       ),
     );
   }

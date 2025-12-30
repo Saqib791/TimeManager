@@ -48,3 +48,4 @@ flutter:
   # Assets Section
   assets:
     - assets/sounds/
+    - assets/fonts/
